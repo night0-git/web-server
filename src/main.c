@@ -3,6 +3,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#define BUF_SIZE 1024
+
 int main() {
     int listen_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (listen_sock == -1) {
@@ -34,12 +36,17 @@ int main() {
         return 1;
     } else {
         printf("Client connected: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-        char buf[1024];
+        char buf[BUF_SIZE];
 
         ssize_t bytes;
         while ((bytes = read(client_sock, buf, sizeof(buf))) > 0) {
             buf[bytes] = '\0';
             printf("Message: %s", buf);
+
+            if (write(client_sock, buf, bytes) == -1) {
+                perror("write");
+                return 1;
+            }
         }
 
         if (bytes == -1) {
