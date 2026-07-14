@@ -1,0 +1,39 @@
+#include <stdio.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
+int main() {
+    int listen_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (listen_sock == -1) {
+        perror("socket");
+        return 1;
+    }
+
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(8080),
+        .sin_addr = {0},
+    };
+
+    if (bind(listen_sock, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        perror("bind");
+        return 1;
+    }
+
+    if (listen(listen_sock, 10) == -1) {
+        perror("listen");
+        return 1;
+    }
+
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+    int client_sock = accept(listen_sock, (struct sockaddr *)&client_addr, &client_addr_len);
+    if (client_sock == -1) {
+        perror("accept");
+        return 1;
+    } else {
+        printf("Client connected: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+    }
+
+    return 0;
+}
