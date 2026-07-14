@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 
 int main() {
     int listen_sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -33,6 +34,19 @@ int main() {
         return 1;
     } else {
         printf("Client connected: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+        char buf[1024];
+
+        ssize_t bytes;
+        while ((bytes = read(client_sock, buf, sizeof(buf))) > 0) {
+            buf[bytes] = '\0';
+            printf("Message: %s", buf);
+        }
+
+        if (bytes == -1) {
+            perror("read");
+            return 1;
+        }
+
     }
 
     return 0;
