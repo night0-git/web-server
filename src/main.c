@@ -53,8 +53,10 @@ int main() {
             perror("read");
             return 1;
         }
-
     }
+
+    close(client_sock);
+    close(listen_sock);
 
     return 0;
 }
