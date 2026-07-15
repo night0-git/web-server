@@ -16,7 +16,7 @@ int main() {
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
         .sin_port = htons(8080),
-        .sin_addr = {0},
+        .sin_addr = INADDR_ANY,
     };
 
     if (bind(listen_sock, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
@@ -56,12 +56,18 @@ int main() {
             ssize_t bytes;
             while ((bytes = read(client_sock, buf, sizeof(buf))) > 0) {
                 buf[bytes] = '\0';
-                printf("Message from %s:%s: %s", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), buf);
+                printf("Message from %s:%d: %s", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), buf);
 
                 if (write(client_sock, buf, bytes) == -1) {
                     perror("write");
                     return 1;
                 }
+            }
+            if (bytes == 0) {
+                printf("Client disconnected: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+            } else if (bytes == -1) {
+                perror("read");
+                return 1;
             }
 
             close (client_sock);
