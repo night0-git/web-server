@@ -16,8 +16,12 @@ struct connection {
     int fd;
     struct sockaddr_in addr;
 
-    char buf[BUF_SIZE];
-    size_t buf_len;
+    char read_buf[BUF_SIZE];
+    size_t read_len;
+
+    char write_buf[BUF_SIZE];
+    size_t write_len;
+    size_t write_offset;
 
     enum conn_state state;
 };

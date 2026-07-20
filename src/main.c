@@ -31,7 +31,6 @@ int main() {
     // Add the listen socket
     struct connection server_conn = {
         .fd = listen_sock,
-        .buf_len = 0,
         .addr = server_addr,
     };
     if (add_conn(epfd, EPOLLIN, &server_conn, listen_sock) == -1) {

@@ -2,6 +2,7 @@
 #include "connection.h"
 #include "server.h"
 #include "parser.h"
+#include "response.h"
 #include <stdio.h>
 #include <sys/epoll.h>
 #include <netinet/in.h>
@@ -59,44 +60,96 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                 // Populate connection struct
                 clients[conn].fd = conn;
                 clients[conn].addr = client_addr;
-                clients[conn].buf_len = 0;
+                clients[conn].read_len = 0;
+                clients[conn].write_len = 0;
+                clients[conn].write_offset = 0;
+                clients[conn].state = CONN_READING;
 
                 // Add client socket to epoll instance
                 if (add_conn(epfd, EPOLLIN, &clients[conn], conn) == -1) {
+                    perror("add_conn");
                     return -1;
                 }
                 printf("Client connected: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
             } else {
                 // Handle client
                 struct connection *conn = (struct connection *)events[i].data.ptr;
+
                 ssize_t bytes;
-                size_t remain = sizeof(conn->buf) - conn->buf_len;
+                size_t remain = sizeof(conn->read_buf) - conn->read_len;
                 if (remain <= 0) {
                     // (?)
                     fprintf(stderr, "Buffer full, dropping data\n");
-                    conn->buf_len = 0;
+                    conn->read_len = 0;
                     continue;
                 }
-                while ((bytes = read(conn->fd, conn->buf + conn->buf_len, remain)) > 0) {
-                    conn->buf_len += bytes;
-                    const char *eoh;
-                    if ((eoh = strstr(conn->buf, "\r\n\r\n"))) {
-                        char data[BUF_SIZE];
-                        shift_buf(conn->buf, &conn->buf_len, data, eoh - conn->buf);
-                        struct request req;
-                        if (parse_request(data, &req) != -1) {
-                            printf("Request: %s %s %s\n", req.method, req.path, req.version);
-                        } else {
-                            printf("Failed to parse request: %.*s\n", (int)(eoh - conn->buf), data);
+
+                if (conn->state == CONN_READING) {
+                    while ((bytes = read(conn->fd, conn->read_buf + conn->read_len, remain)) > 0) {
+                        conn->state = CONN_READING;
+                        conn->read_len += bytes;
+
+                        const char *eoh;
+                        if ((eoh = memmem(conn->read_buf, conn->read_len, "\r\n\r\n", 4))) {
+                            conn->state = CONN_PARSING;
+
+                            char data[BUF_SIZE];
+                            size_t data_len = eoh - conn->read_buf;
+                            shift_buf(conn->read_buf, &conn->read_len, data, data_len);
+
+                            struct request req;
+                            if (parse_request(data, data_len, &req) != -1) {
+                                printf("Request: %s %s %s\n", req.method, req.path, req.version);
+                                gen_response(conn->write_buf, &conn->write_len);
+
+                                conn->state = CONN_WRITING;
+
+                                // Switch to writing mode
+                                struct epoll_event ev = {
+                                    .data.ptr = conn,
+                                    .events = EPOLLOUT,
+                                };
+                                if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
+                                    perror("epoll_ctl");
+                                    return -1;
+                                }
+                            } else {
+                                printf("Failed to parse request: %.*s\n", (int)(data_len), data);
+                                conn->state = CONN_CLOSING;
+                                close(conn->fd);
+                                printf("Client closed: %s:%d\n", inet_ntoa(conn->addr.sin_addr), ntohs(conn->addr.sin_port));
+                                break;
+                            }
                         }
                     }
-                }
-                if (bytes == 0) {
-                    printf("Client disconnected: %s:%d\n", inet_ntoa(conn->addr.sin_addr), ntohs(conn->addr.sin_port));
-                    close (conn->fd);
-                } else if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
-                    perror("read");
-                    return -1;
+                    if (bytes == 0) {
+                        printf("Client disconnected: %s:%d\n", inet_ntoa(conn->addr.sin_addr), ntohs(conn->addr.sin_port));
+                        conn->state = CONN_CLOSING;
+                        close (conn->fd);
+                    } else if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                        perror("read");
+                        return -1;
+                    }
+                } else if (conn->state == CONN_WRITING) {
+                    while (conn->write_offset < conn->write_len) {
+                        ssize_t bytes = write(conn->fd,
+                                              conn->write_buf + conn->write_offset,
+                                              conn->write_len - conn->write_offset);
+                        if (bytes > 0) {
+                            conn->write_offset += bytes;
+                        }
+                        if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                            perror("write");
+                            return -1;
+                        }
+                    }
+                    if (conn->write_offset == conn->write_len) {
+                        conn->write_offset = 0;
+                        conn->write_len = 0;
+                        conn->state = CONN_CLOSING;
+                        close(conn->fd);
+                        printf("Client closed: %s:%d\n", inet_ntoa(conn->addr.sin_addr), ntohs(conn->addr.sin_port));
+                    }
                 }
             }
         }
