@@ -1,7 +1,6 @@
 #include "event_loop.h"
 #include "connection.h"
 #include "server.h"
-#include "buffer.h"
 #include "parser.h"
 #include <stdio.h>
 #include <sys/epoll.h>
@@ -10,6 +9,7 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <string.h>
 
 #define MAX_EVENTS 10
 #define MAX_FDS 65535
@@ -79,11 +79,16 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                 }
                 while ((bytes = read(conn->fd, conn->buf + conn->buf_len, remain)) > 0) {
                     conn->buf_len += bytes;
-                    size_t eoh = find_eoh(conn->buf, conn->buf_len);
-                    char data[BUF_SIZE];
-                    if (eoh != SIZE_MAX) {
-                        shift_buf(conn->buf, &conn->buf_len, data, eoh);
-                        parse_request(data, eoh);
+                    const char *eoh;
+                    if ((eoh = strstr(conn->buf, "\r\n\r\n"))) {
+                        char data[BUF_SIZE];
+                        shift_buf(conn->buf, &conn->buf_len, data, eoh - conn->buf);
+                        struct request req;
+                        if (parse_request(data, &req) != -1) {
+                            printf("Request: %s %s %s\n", req.method, req.path, req.version);
+                        } else {
+                            printf("Failed to parse request: %.*s\n", (int)(eoh - conn->buf), data);
+                        }
                     }
                 }
                 if (bytes == 0) {
