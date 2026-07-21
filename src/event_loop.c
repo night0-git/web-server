@@ -101,7 +101,12 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                         conn->read_len += bytes;
 
                         const char *eoh;
-                        if ((eoh = memmem(conn->read_buf, conn->read_len, "\r\n\r\n", 4))) {
+                        const char *needle = "\r\n";
+                        size_t needle_size = strlen(needle);
+                        if ((eoh = memmem(conn->read_buf, conn->read_len, "\r\n", needle_size))) {
+
+                            eoh += needle_size;
+
                             conn->state = CONN_PARSING;
 
                             char data[BUF_SIZE];
@@ -110,7 +115,10 @@ int start_event_loop(int epfd, struct connection *server_conn) {
 
                             struct request req;
                             if (parse_request(data, data_len, &req) != -1) {
-                                printf("Request: %s %s %s\n", req.method, req.path, req.version);
+                                printf("Request from %s:%d: %s %s %s\n",
+                                       inet_ntoa(conn->addr.sin_addr),
+                                       ntohs(conn->addr.sin_port),
+                                       req.method, req.path, req.version);
                                 gen_response(conn->write_buf, &conn->write_len);
 
                                 conn->state = CONN_WRITING;
@@ -125,10 +133,12 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                                     return -1;
                                 }
                             } else {
-                                printf("Failed to parse request: %.*s\n", (int)(data_len), data);
-                                conn->state = CONN_CLOSING;
-                                close(conn->fd);
-                                printf("Client closed: %s:%d\n", inet_ntoa(conn->addr.sin_addr), ntohs(conn->addr.sin_port));
+                                printf("Failed to parse request from %s:%d: %.*s\n",
+                                       inet_ntoa(conn->addr.sin_addr),
+                                       ntohs(conn->addr.sin_port),
+                                       (int)(data_len - needle_size), data);
+                                conn->state = CONN_READING;
+                                conn->read_len = 0;
                                 break;
                             }
                         }
@@ -157,9 +167,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                     if (conn->write_offset == conn->write_len) {
                         conn->write_offset = 0;
                         conn->write_len = 0;
-                        conn->state = CONN_CLOSING;
-                        close(conn->fd);
-                        printf("Client closed: %s:%d\n", inet_ntoa(conn->addr.sin_addr), ntohs(conn->addr.sin_port));
+                        conn->state = CONN_READING;
                     }
                 }
             }
