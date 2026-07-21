@@ -15,6 +15,9 @@
 #define MAX_EVENTS 10
 #define MAX_FDS 65535
 
+volatile sig_atomic_t keep_running = 1;
+volatile sig_atomic_t keep_accepting = 1;
+
 int add_conn(int epfd, uint32_t events, void *data, int fd) {
     struct epoll_event ev = {
         .events = events,
@@ -33,15 +36,23 @@ int start_event_loop(int epfd, struct connection *server_conn) {
     static struct connection clients[MAX_FDS];
     struct epoll_event events[MAX_EVENTS];
 
-    for (;;) {
+    while (keep_running) {
         int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
         if (nfds == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
             perror("epoll_wait");
             return -1;
         }
 
         for (int i = 0; i < nfds; i++) {
             if (events[i].data.ptr == server_conn) {
+                if (!keep_accepting) {
+                    close(server_conn->fd);
+                    continue;
+                }
+
                 client_addr_len = sizeof(client_addr);
                 int conn = accept(server_conn->fd, (struct sockaddr *)&client_addr, &client_addr_len);
 
@@ -156,4 +167,17 @@ int start_event_loop(int epfd, struct connection *server_conn) {
     }
 
     return 0;
+}
+
+void sig_handler(int signum) {
+    switch (signum) {
+        case SIGTERM:
+            keep_accepting = 0;
+            break;
+        case SIGINT:
+            keep_running = 0;
+            break;
+        default:
+            break;
+    }
 }
