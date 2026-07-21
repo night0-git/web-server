@@ -5,8 +5,7 @@
 #include <stdint.h>
 #include <signal.h>
 
-extern volatile sig_atomic_t keep_running;
-extern volatile sig_atomic_t keep_accepting;
+extern volatile sig_atomic_t sigterm_received;
 
 int add_conn(int epfd, uint32_t events, void *data, int fd);
 

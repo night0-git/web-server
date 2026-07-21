@@ -15,8 +15,7 @@
 #define MAX_EVENTS 10
 #define MAX_FDS 65535
 
-volatile sig_atomic_t keep_running = 1;
-volatile sig_atomic_t keep_accepting = 1;
+volatile sig_atomic_t sigterm_received = 0;
 
 int add_conn(int epfd, uint32_t events, void *data, int fd) {
     struct epoll_event ev = {
@@ -35,8 +34,9 @@ int start_event_loop(int epfd, struct connection *server_conn) {
     socklen_t client_addr_len;
     static struct connection clients[MAX_FDS];
     struct epoll_event events[MAX_EVENTS];
+    int num_clients = 0;
 
-    while (keep_running) {
+    while (!sigterm_received || num_clients > 0) {
         int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
         if (nfds == -1) {
             if (errno == EINTR) {
@@ -48,11 +48,6 @@ int start_event_loop(int epfd, struct connection *server_conn) {
 
         for (int i = 0; i < nfds; i++) {
             if (events[i].data.ptr == server_conn) {
-                if (!keep_accepting) {
-                    close(server_conn->fd);
-                    continue;
-                }
-
                 client_addr_len = sizeof(client_addr);
                 int conn = accept(server_conn->fd, (struct sockaddr *)&client_addr, &client_addr_len);
 
@@ -81,6 +76,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                     perror("add_conn");
                     return -1;
                 }
+                num_clients++;
                 printf("Client connected: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
             } else {
                 // Handle client
@@ -144,9 +140,10 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                         }
                     }
                     if (bytes == 0) {
-                        printf("Client disconnected: %s:%d\n", inet_ntoa(conn->addr.sin_addr), ntohs(conn->addr.sin_port));
                         conn->state = CONN_CLOSING;
                         close (conn->fd);
+                        num_clients--;
+                        printf("Client disconnected: %s:%d\n", inet_ntoa(conn->addr.sin_addr), ntohs(conn->addr.sin_port));
                     } else if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
                         perror("read");
                         return -1;
@@ -180,10 +177,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
 void sig_handler(int signum) {
     switch (signum) {
         case SIGTERM:
-            keep_accepting = 0;
-            break;
-        case SIGINT:
-            keep_running = 0;
+            sigterm_received = 1;
             break;
         default:
             break;

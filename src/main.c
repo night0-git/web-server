@@ -9,6 +9,7 @@
 #include <sys/epoll.h>
 #include <stdbool.h>
 #include <signal.h>
+#include <errno.h>
 
 int main() {
     struct sigaction sa = {
@@ -51,6 +52,14 @@ int main() {
         perror("start_event_loop");
         return 1;
     }
+
+    if (close(epfd) == -1 || close(listen_sock) == -1) {
+        if (errno != EBADF) {
+            perror("close");
+            return 1;
+        }
+    }
+    printf("Server exiting...");
 
     return 0;
 }
