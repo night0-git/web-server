@@ -77,7 +77,9 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                     return -1;
                 }
                 num_clients++;
-                printf("Client connected: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                printf("Client connected: %s:%d (%d)\n",
+                       inet_ntoa(client_addr.sin_addr),
+                       ntohs(client_addr.sin_port), num_clients);
             } else {
                 // Handle client
                 struct connection *conn = (struct connection *)events[i].data.ptr;
@@ -143,7 +145,9 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                         conn->state = CONN_CLOSING;
                         close (conn->fd);
                         num_clients--;
-                        printf("Client disconnected: %s:%d\n", inet_ntoa(conn->addr.sin_addr), ntohs(conn->addr.sin_port));
+                        printf("Client disconnected: %s:%d (%d)\n",
+                               inet_ntoa(conn->addr.sin_addr),
+                               ntohs(conn->addr.sin_port), num_clients);
                     } else if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
                         perror("read");
                         return -1;
