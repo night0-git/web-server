@@ -48,6 +48,15 @@ int start_event_loop(int epfd, struct connection *server_conn) {
 
         for (int i = 0; i < nfds; i++) {
             if (events[i].data.ptr == server_conn) {
+                // This is the last event on the listen socket if SIGTERM is received
+                if (sigterm_received) {
+                    if (close(server_conn->fd)) {
+                        perror("close");
+                        return -1;
+                    }
+                    continue;
+                }
+
                 client_addr_len = sizeof(client_addr);
                 int conn = accept(server_conn->fd, (struct sockaddr *)&client_addr, &client_addr_len);
 
@@ -143,7 +152,10 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                     }
                     if (bytes == 0) {
                         conn->state = CONN_CLOSING;
-                        close (conn->fd);
+                        if (close(conn->fd) == -1) {
+                            perror("close");
+                            return -1;
+                        }
                         num_clients--;
                         printf("Client disconnected: %s:%d (%d)\n",
                                inet_ntoa(conn->addr.sin_addr),
