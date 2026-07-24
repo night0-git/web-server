@@ -7,6 +7,7 @@ struct request {
     char method[16];
     char path[256];
     char version[16];
+    size_t content_len;
 };
 
 int shift_buf(char *buf, size_t *buf_len, char *data, size_t data_len);

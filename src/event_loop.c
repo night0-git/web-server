@@ -118,10 +118,10 @@ int start_event_loop(int epfd, struct connection *server_conn) {
 
                             struct request req;
                             if (parse_request(data, data_len, &req) != -1) {
-                                printf("Request from %s:%d: %s %s %s\n",
+                                printf("Request from %s:%d: %s %s %s, Content-Length: %zu\n",
                                        inet_ntoa(conn->addr.sin_addr),
                                        ntohs(conn->addr.sin_port),
-                                       req.method, req.path, req.version);
+                                       req.method, req.path, req.version, req.content_len);
                                 gen_response(req, conn->write_buf, &conn->write_len);
 
                                 conn->state = CONN_WRITING;

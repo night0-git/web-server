@@ -25,6 +25,7 @@ void gen_response(struct request req, char *buf, size_t *len) {
         "HTTP/1.1 %s\r\n"
         "Content-Type: text/plain\r\n"
         "Content-Length: %zu\r\n"
+        "Connection: keep-alive\r\n"
         "\r\n"
         "%s",
         status, strlen(body), body);

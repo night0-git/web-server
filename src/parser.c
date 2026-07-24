@@ -1,5 +1,7 @@
 #include "parser.h"
+#include "buffer.h"
 #include <string.h>
+#include <stdlib.h>
 
 int shift_buf(char *buf, size_t *buf_len, char *data, size_t data_len) {
     if (data_len > *buf_len) {
@@ -16,30 +18,50 @@ int shift_buf(char *buf, size_t *buf_len, char *data, size_t data_len) {
 }
 
 int parse_request(const char *buf, size_t buf_len, struct request *req) {
-    const char *crlf = memmem(buf, buf_len, "\r\n", 2);
-    if (!crlf) {
+    struct slice b = { buf, buf_len };
+
+    struct slice line;
+    if (read_line(&b, &line) == -1) {
         return -1;
     }
 
-    const char *space1 = memchr(buf, ' ', buf_len);
-    if (!space1 || space1 >= crlf) {
+    struct slice method;
+    if (read_word(&line, &method) == -1) {
         return -1;
     }
-    size_t method_len = space1 - buf;
-    memcpy(req->method, buf, method_len);
-    req->method[method_len] = '\0';
+    memcpy(req->method, method.data, method.len);
+    req->method[method.len] = '\0';
 
-    const char *space2 = memchr(space1 + 1, ' ', buf_len - (space1 - buf) - 1);
-    if (!space2 || space2 >= crlf) {
+    struct slice path;
+    if (read_word(&line, &path) == -1) {
         return -1;
     }
-    size_t path_len = space2 - space1 - 1;
-    memcpy(req->path, space1 + 1, path_len);
-    req->path[path_len] = '\0';
+    memcpy(req->path, path.data, path.len);
+    req->path[path.len] = '\0';
 
-    size_t ver_len = crlf - space2 - 1;
-    memcpy(req->version, space2 + 1, ver_len);
-    req->version[ver_len] = '\0';
+    memcpy(req->version, line.data, line.len);
+    req->version[line.len] = '\0';
+
+    req->content_len = 0;
+    struct slice pair_delim = { ": ", 2 };
+    while (read_line(&b, &line) != -1) {
+        if (line.len == 0) {
+            break;
+        }
+
+        struct slice key;
+        if (read_until(&line, &pair_delim, &key) == -1) {
+            return -1;
+        }
+        struct slice val = line;
+
+        if (memcmp(key.data, "Content-Length", 14) == 0) {
+            if ((req->content_len = strtoul(val.data, NULL, 10)) == 0) {
+                return -1;
+            }
+            break;
+        }
+    }
 
     return 0;
 }
