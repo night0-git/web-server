@@ -92,26 +92,22 @@ int start_event_loop(int epfd, struct connection *server_conn) {
             } else {
                 // Handle client
                 struct connection *conn = (struct connection *)events[i].data.ptr;
-
                 ssize_t bytes;
-                size_t remain = sizeof(conn->read_buf) - conn->read_len;
-                if (remain <= 0) {
-                    // (?)
-                    fprintf(stderr, "Buffer full, dropping data\n");
-                    conn->read_len = 0;
-                    continue;
-                }
 
                 if (conn->state == CONN_READING) {
-                    while ((bytes = read(conn->fd, conn->read_buf + conn->read_len, remain)) > 0) {
+                    while (sizeof(conn->read_buf) - conn->read_len > 0) {
+                        bytes = read(conn->fd, conn->read_buf + conn->read_len, sizeof(conn->read_buf) - conn->read_len);
+                        if (bytes <= 0) {
+                            break;
+                        }
+
                         conn->state = CONN_READING;
                         conn->read_len += bytes;
 
                         const char *eoh;
-                        const char *needle = "\r\n";
+                        const char *needle = "\r\n\r\n";
                         size_t needle_size = strlen(needle);
-                        if ((eoh = memmem(conn->read_buf, conn->read_len, "\r\n", needle_size))) {
-
+                        if ((eoh = memmem(conn->read_buf, conn->read_len, needle, needle_size))) {
                             eoh += needle_size;
 
                             conn->state = CONN_PARSING;
@@ -126,7 +122,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                                        inet_ntoa(conn->addr.sin_addr),
                                        ntohs(conn->addr.sin_port),
                                        req.method, req.path, req.version);
-                                gen_response(conn->write_buf, &conn->write_len);
+                                gen_response(req, conn->write_buf, &conn->write_len);
 
                                 conn->state = CONN_WRITING;
 
@@ -150,6 +146,11 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                             }
                         }
                     }
+                    if (sizeof(conn->read_buf) - conn->read_len <= 0) {
+                        // (?)
+                        printf("Buffer full, dropping data\n");
+                        conn->read_len = 0;
+                    }
                     if (bytes == 0) {
                         conn->state = CONN_CLOSING;
                         if (close(conn->fd) == -1) {
@@ -165,6 +166,10 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                         return -1;
                     }
                 } else if (conn->state == CONN_WRITING) {
+                    char copy[BUF_SIZE];
+                    memcpy(copy, conn->write_buf + conn->write_offset, conn->write_len - conn->write_offset);
+                    copy[conn->write_len - conn->write_offset] = '\0';
+
                     while (conn->write_offset < conn->write_len) {
                         ssize_t bytes = write(conn->fd,
                                               conn->write_buf + conn->write_offset,
@@ -178,9 +183,21 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                         }
                     }
                     if (conn->write_offset == conn->write_len) {
+                        printf("Data sent:\n%s\n", copy);
                         conn->write_offset = 0;
                         conn->write_len = 0;
+
                         conn->state = CONN_READING;
+
+                        // Switch to reading mode
+                        struct epoll_event ev = {
+                            .data.ptr = conn,
+                            .events = EPOLLIN,
+                        };
+                        if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
+                            perror("epoll_ctl");
+                            return -1;
+                        }
                     }
                 }
             }

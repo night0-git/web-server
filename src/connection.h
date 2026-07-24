@@ -3,7 +3,7 @@
 
 #include <netinet/in.h>
 
-#define BUF_SIZE 4096
+#define BUF_SIZE 8192
 
 enum conn_state {
     CONN_READING,
