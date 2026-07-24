@@ -2,11 +2,20 @@ CC := clang
 CFLAGS := -Wall -Wextra
 
 TARGET := bin/web-server
-BUILD_DIR := ./build
-SRC_DIR := ./src
+BUILD_DIR := build
+SRC_DIR := src
 
 SRCS := $(shell find $(SRC_DIR) -name '*.c')
 OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+
+.PHONY: clean run debug all
+
+all: debug
+
+debug: CFLAGS += -g -O0
+release: CFLAGS += -O3
+
+debug release: $(TARGET)
 
 $(TARGET): $(OBJS)
 	@mkdir -p $(dir $@)
@@ -16,10 +25,8 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-.PHONY: clean run
-
-run: $(TARGET)
+run: debug
 	./$(TARGET)
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) bin
