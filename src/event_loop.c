@@ -29,6 +29,120 @@ int add_conn(int epfd, uint32_t events, void *data, int fd) {
     return 0;
 }
 
+// Handle one read connection
+int conn_read(struct connection *conn, int epfd, int *num_clients) {
+    ssize_t bytes;
+    while (sizeof(conn->read_buf) - conn->read_len > 0) {
+        bytes = read(conn->fd, conn->read_buf + conn->read_len, sizeof(conn->read_buf) - conn->read_len);
+        if (bytes <= 0) {
+            break;
+        }
+
+        conn->state = CONN_READING;
+        conn->read_len += bytes;
+
+        const char *eoh;
+        const char *needle = "\r\n\r\n";
+        size_t needle_size = strlen(needle);
+        if ((eoh = memmem(conn->read_buf, conn->read_len, needle, needle_size))) {
+            eoh += needle_size;
+
+            conn->state = CONN_PARSING;
+
+            char data[BUF_SIZE];
+            size_t data_len = eoh - conn->read_buf;
+            shift_buf(conn->read_buf, &conn->read_len, data, data_len);
+
+            struct request req;
+            if (parse_request(data, data_len, &req) != -1) {
+                printf("Request from %s:%d: %s %s %s, Content-Length: %zu\n",
+                       inet_ntoa(conn->addr.sin_addr),
+                       ntohs(conn->addr.sin_port),
+                       req.method, req.path, req.version, req.content_len);
+                gen_response(req, conn->write_buf, &conn->write_len);
+
+                conn->state = CONN_WRITING;
+
+                // Switch to writing mode
+                struct epoll_event ev = {
+                    .data.ptr = conn,
+                    .events = EPOLLOUT,
+                };
+                if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
+                    perror("epoll_ctl");
+                    return -1;
+                }
+            } else {
+                printf("Failed to parse request from %s:%d: %.*s\n",
+                       inet_ntoa(conn->addr.sin_addr),
+                       ntohs(conn->addr.sin_port),
+                       (int)(data_len - needle_size), data);
+                conn->state = CONN_READING;
+                conn->read_len = 0;
+                break;
+            }
+        }
+    }
+    if (sizeof(conn->read_buf) - conn->read_len <= 0) {
+        // (?)
+        printf("Buffer full, dropping data\n");
+        conn->read_len = 0;
+    }
+    if (bytes == 0) {
+        conn->state = CONN_CLOSING;
+        if (close(conn->fd) == -1) {
+            perror("close");
+            return -1;
+        }
+        (*num_clients)--;
+        printf("Client disconnected: %s:%d (%d)\n",
+               inet_ntoa(conn->addr.sin_addr),
+               ntohs(conn->addr.sin_port), *num_clients);
+    } else if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        perror("read");
+        return -1;
+    }
+    return 0;
+}
+
+// Handle one write connection
+int conn_write(struct connection *conn, int epfd) {
+    char copy[BUF_SIZE];
+    memcpy(copy, conn->write_buf + conn->write_offset, conn->write_len - conn->write_offset);
+    copy[conn->write_len - conn->write_offset] = '\0';
+
+    while (conn->write_offset < conn->write_len) {
+        ssize_t bytes = write(conn->fd,
+                              conn->write_buf + conn->write_offset,
+                              conn->write_len - conn->write_offset);
+        if (bytes > 0) {
+            conn->write_offset += bytes;
+        }
+        if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+            perror("write");
+            return -1;
+        }
+    }
+    if (conn->write_offset == conn->write_len) {
+        printf("Data sent:\n%s\n", copy);
+        conn->write_offset = 0;
+        conn->write_len = 0;
+
+        conn->state = CONN_READING;
+
+        // Switch to reading mode
+        struct epoll_event ev = {
+            .data.ptr = conn,
+            .events = EPOLLIN,
+        };
+        if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
+            perror("epoll_ctl");
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int start_event_loop(int epfd, struct connection *server_conn) {
     struct sockaddr_in client_addr;
     socklen_t client_addr_len;
@@ -92,112 +206,15 @@ int start_event_loop(int epfd, struct connection *server_conn) {
             } else {
                 // Handle client
                 struct connection *conn = (struct connection *)events[i].data.ptr;
-                ssize_t bytes;
-
                 if (conn->state == CONN_READING) {
-                    while (sizeof(conn->read_buf) - conn->read_len > 0) {
-                        bytes = read(conn->fd, conn->read_buf + conn->read_len, sizeof(conn->read_buf) - conn->read_len);
-                        if (bytes <= 0) {
-                            break;
-                        }
-
-                        conn->state = CONN_READING;
-                        conn->read_len += bytes;
-
-                        const char *eoh;
-                        const char *needle = "\r\n\r\n";
-                        size_t needle_size = strlen(needle);
-                        if ((eoh = memmem(conn->read_buf, conn->read_len, needle, needle_size))) {
-                            eoh += needle_size;
-
-                            conn->state = CONN_PARSING;
-
-                            char data[BUF_SIZE];
-                            size_t data_len = eoh - conn->read_buf;
-                            shift_buf(conn->read_buf, &conn->read_len, data, data_len);
-
-                            struct request req;
-                            if (parse_request(data, data_len, &req) != -1) {
-                                printf("Request from %s:%d: %s %s %s, Content-Length: %zu\n",
-                                       inet_ntoa(conn->addr.sin_addr),
-                                       ntohs(conn->addr.sin_port),
-                                       req.method, req.path, req.version, req.content_len);
-                                gen_response(req, conn->write_buf, &conn->write_len);
-
-                                conn->state = CONN_WRITING;
-
-                                // Switch to writing mode
-                                struct epoll_event ev = {
-                                    .data.ptr = conn,
-                                    .events = EPOLLOUT,
-                                };
-                                if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
-                                    perror("epoll_ctl");
-                                    return -1;
-                                }
-                            } else {
-                                printf("Failed to parse request from %s:%d: %.*s\n",
-                                       inet_ntoa(conn->addr.sin_addr),
-                                       ntohs(conn->addr.sin_port),
-                                       (int)(data_len - needle_size), data);
-                                conn->state = CONN_READING;
-                                conn->read_len = 0;
-                                break;
-                            }
-                        }
-                    }
-                    if (sizeof(conn->read_buf) - conn->read_len <= 0) {
-                        // (?)
-                        printf("Buffer full, dropping data\n");
-                        conn->read_len = 0;
-                    }
-                    if (bytes == 0) {
-                        conn->state = CONN_CLOSING;
-                        if (close(conn->fd) == -1) {
-                            perror("close");
-                            return -1;
-                        }
-                        num_clients--;
-                        printf("Client disconnected: %s:%d (%d)\n",
-                               inet_ntoa(conn->addr.sin_addr),
-                               ntohs(conn->addr.sin_port), num_clients);
-                    } else if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
-                        perror("read");
+                    if (conn_read(conn, epfd, &num_clients) == -1) {
+                        perror("conn_read");
                         return -1;
                     }
                 } else if (conn->state == CONN_WRITING) {
-                    char copy[BUF_SIZE];
-                    memcpy(copy, conn->write_buf + conn->write_offset, conn->write_len - conn->write_offset);
-                    copy[conn->write_len - conn->write_offset] = '\0';
-
-                    while (conn->write_offset < conn->write_len) {
-                        ssize_t bytes = write(conn->fd,
-                                              conn->write_buf + conn->write_offset,
-                                              conn->write_len - conn->write_offset);
-                        if (bytes > 0) {
-                            conn->write_offset += bytes;
-                        }
-                        if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
-                            perror("write");
-                            return -1;
-                        }
-                    }
-                    if (conn->write_offset == conn->write_len) {
-                        printf("Data sent:\n%s\n", copy);
-                        conn->write_offset = 0;
-                        conn->write_len = 0;
-
-                        conn->state = CONN_READING;
-
-                        // Switch to reading mode
-                        struct epoll_event ev = {
-                            .data.ptr = conn,
-                            .events = EPOLLIN,
-                        };
-                        if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
-                            perror("epoll_ctl");
-                            return -1;
-                        }
+                    if (conn_write(conn, epfd) == -1) {
+                        perror("conn_write");
+                        return -1;
                     }
                 }
             }
