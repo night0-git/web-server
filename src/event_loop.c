@@ -107,7 +107,7 @@ int conn_read(struct connection *conn, int epfd, int *num_clients) {
 
 // Handle one write connection
 int conn_write(struct connection *conn, int epfd) {
-    printf("Response generated: %s\n", conn->write.buf);
+    printf("Response generated:\n%s\n", conn->write.buf);
 
     while (conn->write.offset < conn->write.len) {
         ssize_t bytes = write(conn->fd,

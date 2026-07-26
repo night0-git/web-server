@@ -14,7 +14,7 @@ struct read {
 struct write {
     char buf[BUF_SIZE];
     size_t len;
-    off_t offset;
+    size_t offset;
 
     int file_fd;
     off_t file_offset;
