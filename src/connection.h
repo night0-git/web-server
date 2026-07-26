@@ -1,9 +1,8 @@
 #ifndef CONNECTION_H
 #define CONNECTION_H
 
+#include "buffer.h"
 #include <netinet/in.h>
-
-#define BUF_SIZE 8192
 
 enum conn_state {
     CONN_READING,
@@ -16,14 +15,12 @@ struct connection {
     int fd;
     struct sockaddr_in addr;
 
-    char read_buf[BUF_SIZE];
-    size_t read_len;
-
-    char write_buf[BUF_SIZE];
-    size_t write_len;
-    size_t write_offset;
+    struct read read;
+    struct write write;
 
     enum conn_state state;
 };
+
+void client_init(int fd, struct sockaddr_in addr, struct connection *conn);
 
 #endif

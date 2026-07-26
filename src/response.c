@@ -2,14 +2,14 @@
 #include <stdio.h>
 #include <string.h>
 
-void gen_response(struct request req, char *buf, size_t *len) {
+void prepare_response(struct request *req, struct write *write) {
     char body[200];
     const char *status = "200 OK";
 
-    if (strcmp(req.method, "GET") == 0) {
-        if (strcmp(req.path, "/") == 0) {
+    if (strcmp(req->method, "GET") == 0) {
+        if (strcmp(req->path, "/") == 0) {
             strcpy(body, "Hello, World!");
-        } else if (strcmp(req.path, "/favicon.ico") == 0) {
+        } else if (strcmp(req->path, "/favicon.ico") == 0) {
             status = "404 Not Found";
             strcpy(body, "Favicon not found");
         } else {
@@ -21,18 +21,17 @@ void gen_response(struct request req, char *buf, size_t *len) {
         strcpy(body, "Method Not Allowed");
     }
 
-    int bytes_written = sprintf(buf,
+    int bytes_written = sprintf(write->buf,
         "HTTP/1.1 %s\r\n"
         "Content-Type: text/plain\r\n"
         "Content-Length: %zu\r\n"
-        "Connection: keep-alive\r\n"
         "\r\n"
         "%s",
         status, strlen(body), body);
 
     if (bytes_written > 0) {
-        *len = (size_t)bytes_written;
+        write->len = (size_t)bytes_written;
     } else {
-        *len = 0;
+        write->len = 0;
     }
 }

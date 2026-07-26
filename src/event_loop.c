@@ -32,26 +32,26 @@ int add_conn(int epfd, uint32_t events, void *data, int fd) {
 // Handle one read connection
 int conn_read(struct connection *conn, int epfd, int *num_clients) {
     ssize_t bytes;
-    while (sizeof(conn->read_buf) - conn->read_len > 0) {
-        bytes = read(conn->fd, conn->read_buf + conn->read_len, sizeof(conn->read_buf) - conn->read_len);
+    while (sizeof(conn->read.buf) - conn->read.len > 0) {
+        bytes = read(conn->fd, conn->read.buf + conn->read.len, sizeof(conn->read.buf) - conn->read.len);
         if (bytes <= 0) {
             break;
         }
 
         conn->state = CONN_READING;
-        conn->read_len += bytes;
+        conn->read.len += bytes;
 
         const char *eoh;
         const char *needle = "\r\n\r\n";
         size_t needle_size = strlen(needle);
-        if ((eoh = memmem(conn->read_buf, conn->read_len, needle, needle_size))) {
+        if ((eoh = memmem(conn->read.buf, conn->read.len, needle, needle_size))) {
             eoh += needle_size;
 
             conn->state = CONN_PARSING;
 
             char data[BUF_SIZE];
-            size_t data_len = eoh - conn->read_buf;
-            shift_buf(conn->read_buf, &conn->read_len, data, data_len);
+            size_t data_len = eoh - conn->read.buf;
+            shift_buf(conn->read.buf, &conn->read.len, data, data_len);
 
             struct request req;
             if (parse_request(data, data_len, &req) != -1) {
@@ -59,7 +59,7 @@ int conn_read(struct connection *conn, int epfd, int *num_clients) {
                        inet_ntoa(conn->addr.sin_addr),
                        ntohs(conn->addr.sin_port),
                        req.method, req.path, req.version, req.content_len);
-                gen_response(req, conn->write_buf, &conn->write_len);
+                prepare_response(&req, &conn->write);
 
                 conn->state = CONN_WRITING;
 
@@ -78,15 +78,15 @@ int conn_read(struct connection *conn, int epfd, int *num_clients) {
                        ntohs(conn->addr.sin_port),
                        (int)(data_len - needle_size), data);
                 conn->state = CONN_READING;
-                conn->read_len = 0;
+                conn->read.len = 0;
                 break;
             }
         }
     }
-    if (sizeof(conn->read_buf) - conn->read_len <= 0) {
+    if (sizeof(conn->read.buf) - conn->read.len <= 0) {
         // (?)
         printf("Buffer full, dropping data\n");
-        conn->read_len = 0;
+        conn->read.len = 0;
     }
     if (bytes == 0) {
         conn->state = CONN_CLOSING;
@@ -107,26 +107,23 @@ int conn_read(struct connection *conn, int epfd, int *num_clients) {
 
 // Handle one write connection
 int conn_write(struct connection *conn, int epfd) {
-    char copy[BUF_SIZE];
-    memcpy(copy, conn->write_buf + conn->write_offset, conn->write_len - conn->write_offset);
-    copy[conn->write_len - conn->write_offset] = '\0';
+    printf("Response generated: %s\n", conn->write.buf);
 
-    while (conn->write_offset < conn->write_len) {
+    while (conn->write.offset < conn->write.len) {
         ssize_t bytes = write(conn->fd,
-                              conn->write_buf + conn->write_offset,
-                              conn->write_len - conn->write_offset);
+                              conn->write.buf + conn->write.offset,
+                              conn->write.len - conn->write.offset);
         if (bytes > 0) {
-            conn->write_offset += bytes;
+            conn->write.offset += bytes;
         }
         if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
             perror("write");
             return -1;
         }
     }
-    if (conn->write_offset == conn->write_len) {
-        printf("Data sent:\n%s\n", copy);
-        conn->write_offset = 0;
-        conn->write_len = 0;
+    if (conn->write.offset == conn->write.len) {
+        conn->write.offset = 0;
+        conn->write.len = 0;
 
         conn->state = CONN_READING;
 
@@ -187,12 +184,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                 }
 
                 // Populate connection struct
-                clients[conn].fd = conn;
-                clients[conn].addr = client_addr;
-                clients[conn].read_len = 0;
-                clients[conn].write_len = 0;
-                clients[conn].write_offset = 0;
-                clients[conn].state = CONN_READING;
+                client_init(conn, client_addr, &clients[conn]);
 
                 // Add client socket to epoll instance
                 if (add_conn(epfd, EPOLLIN, &clients[conn], conn) == -1) {

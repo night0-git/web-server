@@ -2,6 +2,23 @@
 #define BUFFER_H
 
 #include <stddef.h>
+#include <sys/types.h>
+
+#define BUF_SIZE 8192
+
+struct read {
+    char buf[BUF_SIZE];
+    size_t len;
+};
+
+struct write {
+    char buf[BUF_SIZE];
+    size_t len;
+    off_t offset;
+
+    int file_fd;
+    off_t file_offset;
+};
 
 // A movable slice of a string of bytes
 struct slice {
