@@ -11,7 +11,9 @@
 #define CODE_OK "200 OK"
 #define CODE_NOT_FOUND "404 Not Found"
 #define CODE_METHOD_NOT_ALLOWED "405 Method Not Allowed"
-#define ROOT_RESPONSE "My C web server"
+
+#define RESPONSE_TEXT_PLAIN "text/plain"
+#define RESPONSE_TEXT_HTML "text/html"
 
 void prepare_response(struct request *req, struct write *write);
 
