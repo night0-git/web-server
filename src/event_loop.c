@@ -88,7 +88,7 @@ int conn_read(struct connection *conn, int epfd, int *num_clients) {
         printf("Buffer full, dropping data\n");
         conn->read.len = 0;
     }
-    if (bytes == 0) {
+    if (bytes == 0 || (bytes == -1 && errno == ECONNRESET)) {
         conn->state = CONN_CLOSING;
         if (close(conn->fd) == -1) {
             perror("close");
