@@ -25,7 +25,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-run: debug
+run: $(TARGET)
 	./$(TARGET)
 
 clean:
