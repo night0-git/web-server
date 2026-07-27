@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <sys/types.h>
+#include <stdio.h>
 
 #define BUF_SIZE 8192
 
@@ -16,9 +17,10 @@ struct write {
     size_t len;
     size_t offset;
 
-    int file_fd;
-    off_t file_offset;
+    FILE *file;
 };
+
+void close_file(struct write *write);
 
 // A movable slice of a string of bytes
 struct slice {

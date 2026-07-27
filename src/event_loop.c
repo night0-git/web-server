@@ -55,7 +55,7 @@ int conn_read(struct connection *conn, int epfd, int *num_clients) {
 
             struct request req;
             if (parse_request(data, data_len, &req) != -1) {
-                printf("Request from %s:%d: %s %s %s, Content-Length: %zu\n",
+                printf("Request from %s:%d:\n%s %s %s, Content-Length: %zu\n",
                        inet_ntoa(conn->addr.sin_addr),
                        ntohs(conn->addr.sin_port),
                        req.method, req.path, req.version, req.content_len);
@@ -98,7 +98,11 @@ int conn_read(struct connection *conn, int epfd, int *num_clients) {
         printf("Client disconnected: %s:%d (%d)\n",
                inet_ntoa(conn->addr.sin_addr),
                ntohs(conn->addr.sin_port), *num_clients);
-    } else if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+    } else if (bytes == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return 0;   // wait for next EPOLLIN
+        }
+
         perror("read");
         return -1;
     }
@@ -115,26 +119,44 @@ int conn_write(struct connection *conn, int epfd) {
                               conn->write.len - conn->write.offset);
         if (bytes > 0) {
             conn->write.offset += bytes;
-        }
-        if (bytes == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        } else if (bytes == -1) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return 0;   // wait for next EPOLLOUT
+            }
+
             perror("write");
             return -1;
         }
     }
+
     if (conn->write.offset == conn->write.len) {
-        conn->write.offset = 0;
-        conn->write.len = 0;
+        // Fetch more data from file if there is a file opened
+        if (conn->write.file && !feof(conn->write.file)) {
+            size_t bytes_read = fread(conn->write.buf, 1, sizeof(conn->write.buf), conn->write.file);
+            if (bytes_read > 0) {
+                conn->write.offset = 0;
+                conn->write.len = bytes_read;
+            } else if (feof(conn->write.file)) {
+                close_file(&conn->write);
+            } else {
+                perror("fread");
+                return -1;
+            }
+        } else {
+            conn->write.offset = 0;
+            conn->write.len = 0;
 
-        conn->state = CONN_READING;
+            conn->state = CONN_READING;
 
-        // Switch to reading mode
-        struct epoll_event ev = {
-            .data.ptr = conn,
-            .events = EPOLLIN,
-        };
-        if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
-            perror("epoll_ctl");
-            return -1;
+            // Switch to reading mode
+            struct epoll_event ev = {
+                .data.ptr = conn,
+                .events = EPOLLIN,
+            };
+            if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
+                perror("epoll_ctl");
+                return -1;
+            }
         }
     }
     return 0;

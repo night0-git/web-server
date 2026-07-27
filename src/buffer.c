@@ -2,6 +2,13 @@
 #include <stddef.h>
 #include <string.h>
 
+void close_file(struct write *write) {
+    if (write->file) {
+        fclose(write->file);
+        write->file = NULL;
+    }
+}
+
 int read_until(struct slice *buf, const struct slice *delim, struct slice *out) {
     if (peek_until(buf, delim, out) == -1) {
         return -1;
