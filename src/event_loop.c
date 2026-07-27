@@ -16,6 +16,7 @@
 #define MAX_FDS 65535
 
 volatile sig_atomic_t sigterm_received = 0;
+volatile sig_atomic_t sigint_received = 0;
 
 int add_conn(int epfd, uint32_t events, void *data, int fd) {
     struct epoll_event ev = {
@@ -171,7 +172,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
     struct epoll_event events[MAX_EVENTS];
     int num_clients = 0;
 
-    while (!sigterm_received || num_clients > 0) {
+    while ((!sigterm_received || num_clients > 0) && !sigint_received) {
         int nfds = epoll_wait(epfd, events, MAX_EVENTS, -1);
         if (nfds == -1) {
             if (errno == EINTR) {
@@ -237,6 +238,14 @@ int start_event_loop(int epfd, struct connection *server_conn) {
         }
     }
 
+    if (sigint_received) {
+        for (int i = 0; i < num_clients; i++) {
+            if (close(clients[i].fd) == -1) {
+                perror("close");
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -244,6 +253,9 @@ void sig_handler(int signum) {
     switch (signum) {
         case SIGTERM:
             sigterm_received = 1;
+            break;
+        case SIGINT:
+            sigint_received = 1;
             break;
         default:
             break;
