@@ -3,13 +3,39 @@
 #include <string.h>
 #include <sys/stat.h>
 
+struct mime_map mime_registry[] = {
+    {".html", "text/html"},
+    {".css",  "text/css"},
+    {".png",  "image/png"},
+    {".jpg",  "image/jpeg"},
+    {".jpeg", "image/jpeg"},
+    {".ico", "image/x-icon"},
+    {".pdf",  "application/pdf"}
+};
+
+const char *get_mime_type_by_extension(const char *filename) {
+    const char *default_type = "application/octet-stream";
+    const char *dot = strrchr(filename, '.');
+    if (!dot) {
+        return default_type;
+    }
+
+    int total_types = sizeof(mime_registry) / sizeof(struct mime_map);
+    for (int i = 0; i < total_types; i++) {
+        if (strcasecmp(dot, mime_registry[i].extension) == 0) {
+            return mime_registry[i].mime_type;
+        }
+    }
+
+    return default_type;
+}
+
 void prepare_response(struct request *req, struct write *write) {
     int is_root_req = strcmp(req->path, "/") == 0;
 
     const char *status = CODE_OK;
     FILE *f = NULL;
     size_t content_len = 0;
-    const char *content_type = is_root_req ? RESPONSE_TEXT_HTML : RESPONSE_TEXT_PLAIN;
     char path[256];
 
     if (is_root_req) {
@@ -17,6 +43,8 @@ void prepare_response(struct request *req, struct write *write) {
     } else {
         snprintf(path, sizeof(path), "%s%s", SERVE_FILE_ROOT, req->path);
     }
+
+    const char *content_type = get_mime_type_by_extension(path);
 
     if (strcmp(req->method, "GET") == 0) {
         write->file = fopen(path, "rb");
