@@ -36,6 +36,10 @@ int parse_request(const char *buf, size_t buf_len, struct request *req) {
     if (read_word(&line, &path) == -1) {
         return -1;
     }
+    char *query = memchr(path.data, '?', path.len);
+    if (query) {
+        path.len = query - path.data;
+    }
     memcpy(req->path, path.data, path.len);
     req->path[path.len] = '\0';
 
