@@ -79,13 +79,15 @@ int conn_read(struct connection *conn, int epfd, int *num_clients) {
                        (int)(data_len - needle_size), data);
                 conn->state = CONN_READING;
                 conn->read.len = 0;
-                break;
             }
         }
     }
-    if (sizeof(conn->read.buf) - conn->read.len <= 0) {
-        // (?)
+    if (sizeof(conn->read.buf) <= conn->read.len) {
+        // Reset the whole read buffer if we don't find a request
         printf("Buffer full, dropping data\n");
+        if (conn->state == CONN_PARSING) {
+            conn->state = CONN_READING;
+        }
         conn->read.len = 0;
     }
     if (bytes == 0 || (bytes == -1 && errno == ECONNRESET)) {
