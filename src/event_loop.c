@@ -161,7 +161,7 @@ int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clie
                 }
                 return 0;
             }
-            
+
             perror("write");
             if (close_conn(conn, *num_clients) == -1) {
                 perror("close_conn");
@@ -233,11 +233,15 @@ int start_event_loop(int epfd, struct connection *server_conn) {
         for (int i = 0; i < nfds; i++) {
             if (events[i].data.ptr == server_conn) {
                 // This is the last event on the listen socket if SIGTERM is received
-                if (sigterm_received || num_clients == MAX_FDS) {
+                if (sigterm_received) {
                     if (close(server_conn->fd)) {
                         perror("close");
                         return -1;
                     }
+                    continue;
+                }
+
+                if (num_clients == MAX_FDS) {
                     continue;
                 }
 
@@ -266,7 +270,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                 }
 
                 if (add_active_fd(conn, active_fds, &num_clients, MAX_FDS) == -1) {
-                    // Theoretically this should not happen because we closed the server already
+                    // Theoretically this should not happen because we exit earlier
                     if (epoll_ctl(epfd, EPOLL_CTL_DEL, conn, NULL) == -1) {
                         perror("epoll_ctl");
                     }
