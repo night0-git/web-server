@@ -94,6 +94,8 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
                     perror("epoll_ctl");
                     return -1;
                 }
+
+                break;
             } else {
                 printf("Failed to parse request from %s:%d: %.*s\n",
                        inet_ntoa(conn->addr.sin_addr),
@@ -207,6 +209,7 @@ int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clie
                 return -1;
             }
         } else {
+            close_file(&conn->write);
             conn->write.offset = 0;
             conn->write.len = 0;
 
