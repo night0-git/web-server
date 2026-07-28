@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <signal.h>
 
+#define MAX_EVENTS 10
+#define MAX_FDS 65535
+
 extern volatile sig_atomic_t sigterm_received;
 extern volatile sig_atomic_t sigint_received;
 
