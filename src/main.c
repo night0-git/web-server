@@ -20,6 +20,12 @@ int main() {
         return 1;
     }
 
+    sa.sa_handler = SIG_IGN;
+    if (sigaction(SIGPIPE, &sa, NULL) == -1) {
+        perror("sigaction");
+        return 1;
+    }
+
     struct sockaddr_in server_addr = {
         .sin_family = AF_INET,
         .sin_port = htons(8080),

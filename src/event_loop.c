@@ -173,7 +173,7 @@ int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clie
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 return 0;   // wait for next EPOLLOUT
             } else {
-                if (errno == ECONNRESET) {
+                if (errno == ECONNRESET || errno == EPIPE) {
                     if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
                         return -1;
                     }
