@@ -3,6 +3,8 @@
 #include "server.h"
 #include "parser.h"
 #include "response.h"
+#include <endian.h>
+#include <linux/limits.h>
 #include <stdio.h>
 #include <sys/epoll.h>
 #include <netinet/in.h>
@@ -27,20 +29,29 @@ int add_conn(int epfd, uint32_t events, void *data, int fd) {
     return 0;
 }
 
-int close_conn(struct connection *conn, int num_clients) {
+int close_conn(struct connection *conn) {
     conn->state = CONN_CLOSING;
     if (close(conn->fd) == -1) {
         perror("close");
         return -1;
     }
     close_file(&conn->write);
-    printf("Client disconnected: %s:%d (%d)\n",
-           inet_ntoa(conn->addr.sin_addr),
-           ntohs(conn->addr.sin_port), num_clients - 1);
     return 0;
 }
 
-// Handle one read connection
+int close_conn_and_remove_fd(struct connection *conn, int *active_fds, int *num_clients) {
+    if (close_conn(conn) == -1) {
+        perror("close_conn");
+        return -1;
+    }
+    if (remove_active_fd(conn->fd, active_fds, num_clients) == -1) {
+        perror("remove_active_fd");
+        return -1;
+    }
+    return 0;
+}
+
+// Handle one read connection, a return value of -1 will terminate the server
 int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clients) {
     ssize_t bytes;
     while (sizeof(conn->read.buf) - conn->read.len > 0) {
@@ -93,33 +104,41 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
             }
         }
     }
-    if (bytes == 0 || (bytes == -1 && errno == ECONNRESET)) {
-        if (close_conn(conn, *num_clients) == -1) {
-            perror("close_conn");
+
+    if (bytes == 0) {
+        if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
+            perror("close_conn_and_remove_fd");
             return -1;
         }
-        if (remove_active_fd(conn->fd, active_fds, num_clients) == -1) {
-            perror("remove_active_fd");
-            return -1;
-        }
+        printf("Client disconnected: %s:%d (%d)\n",
+               inet_ntoa(conn->addr.sin_addr),
+               ntohs(conn->addr.sin_port), *num_clients);
         return 0;
     } else if (bytes == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return 0;   // wait for next EPOLLIN
+        } else if (errno == ECONNRESET) {
+            if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
+                perror("close_conn_and_remove_fd");
+                return -1;
+            }
+            printf("Client disconnected: %s:%d (%d)\n",
+                   inet_ntoa(conn->addr.sin_addr),
+                   ntohs(conn->addr.sin_port), *num_clients);
+        } else {
+            // Print the previous read error
+            perror("read");
+            if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
+                perror("close_conn_and_remove_fd");
+                return -1;
+            }
+            printf("Client closed due to read error: %s:%d (%d)\n",
+                   inet_ntoa(conn->addr.sin_addr),
+                   ntohs(conn->addr.sin_port), *num_clients);
         }
-
-        perror("read");
-        if (close_conn(conn, *num_clients) == -1) {
-            perror("close_conn");
-            return -1;
-        }
-        if (remove_active_fd(conn->fd, active_fds, num_clients) == -1) {
-            perror("remove_active_fd");
-            return -1;
-        }
-
-        return -1;
+        return 0;
     }
+
     if (sizeof(conn->read.buf) <= conn->read.len) {
         // Reset the whole read buffer if we don't find a request
         printf("Buffer full, dropping data\n");
@@ -128,10 +147,11 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
         }
         conn->read.len = 0;
     }
+
     return 0;
 }
 
-// Handle one write connection
+// Handle one write connection, a return value of -1 will terminate the server
 int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clients) {
     // Print only the headers
     if (memcmp(conn->write.buf + conn->write.offset, "HTTP/1.1", sizeof("HTTP/1.1") - 1) == 0) {
@@ -150,29 +170,25 @@ int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clie
         } else if (bytes == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 return 0;   // wait for next EPOLLOUT
-            } else if (errno == ECONNRESET) {
-                if (close_conn(conn, *num_clients) == -1) {
-                    perror("close_conn");
-                    return -1;
-                }
-                if (remove_active_fd(conn->fd, active_fds, num_clients) == -1) {
-                    perror("remove_active_fd");
-                    return -1;
+            } else {
+                if (errno == ECONNRESET) {
+                    if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
+                        return -1;
+                    }
+                    printf("Client disconnected: %s:%d (%d)\n",
+                           inet_ntoa(conn->addr.sin_addr),
+                           ntohs(conn->addr.sin_port), *num_clients);
+                } else {
+                    perror("write");
+                    if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
+                        return -1;
+                    }
+                    printf("Client closed due to write error: %s:%d (%d)\n",
+                           inet_ntoa(conn->addr.sin_addr),
+                           ntohs(conn->addr.sin_port), *num_clients);
                 }
                 return 0;
             }
-
-            perror("write");
-            if (close_conn(conn, *num_clients) == -1) {
-                perror("close_conn");
-                return -1;
-            }
-            if (remove_active_fd(conn->fd, active_fds, num_clients) == -1) {
-                perror("remove_active_fd");
-                return -1;
-            };
-
-            return -1;
         }
     }
 
@@ -207,6 +223,7 @@ int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clie
             }
         }
     }
+
     return 0;
 }
 
@@ -273,9 +290,11 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                     // Theoretically this should not happen because we exit earlier
                     if (epoll_ctl(epfd, EPOLL_CTL_DEL, conn, NULL) == -1) {
                         perror("epoll_ctl");
+                        return -1;
                     }
                     if (close(conn) == -1) {
                         perror("close");
+                        return -1;
                     }
 
                     continue;
@@ -305,9 +324,8 @@ int start_event_loop(int epfd, struct connection *server_conn) {
     if (sigint_received) {
         for (int i = 0; i < num_clients; i++) {
             int fd = active_fds[i];
-            close_file(&clients[fd].write);
-            if (close(fd) == -1) {
-                perror("close");
+            if (close_conn(&clients[fd]) == -1) {
+                perror("close_conn");
             }
             printf("Client closed: %s:%d (%d)\n",
                    inet_ntoa(clients[fd].addr.sin_addr),
