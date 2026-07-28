@@ -10,7 +10,7 @@ OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 .PHONY: clean run debug all
 
-all: debug
+all: release
 
 debug: CFLAGS += -g -O0
 release: CFLAGS += -O3
