@@ -233,7 +233,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
         for (int i = 0; i < nfds; i++) {
             if (events[i].data.ptr == server_conn) {
                 // This is the last event on the listen socket if SIGTERM is received
-                if (sigterm_received) {
+                if (sigterm_received || num_clients == MAX_FDS) {
                     if (close(server_conn->fd)) {
                         perror("close");
                         return -1;
@@ -259,23 +259,22 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                 // Populate connection struct
                 client_init(conn, client_addr, &clients[conn]);
 
-                // Try to add the fd before adding to epoll instance to check if we have any room left
-                if (add_active_fd(conn, active_fds, &num_clients, MAX_FDS) == -1) {
-                    int err = errno;
-                    perror("add_active_fd");
-
-                    if (close(conn) == -1) {
-                        perror("close");
-                    }
-
-                    errno = err;
-                    return -1;
-                }
-
                 // Add client socket to epoll instance
                 if (add_conn(epfd, EPOLLIN, &clients[conn], conn) == -1) {
                     perror("add_conn");
                     return -1;
+                }
+
+                if (add_active_fd(conn, active_fds, &num_clients, MAX_FDS) == -1) {
+                    // Theoretically this should not happen because we closed the server already
+                    if (epoll_ctl(epfd, EPOLL_CTL_DEL, conn, NULL) == -1) {
+                        perror("epoll_ctl");
+                    }
+                    if (close(conn) == -1) {
+                        perror("close");
+                    }
+
+                    continue;
                 }
 
                 printf("Client connected: %s:%d (%d)\n",
