@@ -93,14 +93,6 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
             }
         }
     }
-    if (sizeof(conn->read.buf) <= conn->read.len) {
-        // Reset the whole read buffer if we don't find a request
-        printf("Buffer full, dropping data\n");
-        if (conn->state == CONN_PARSING) {
-            conn->state = CONN_READING;
-        }
-        conn->read.len = 0;
-    }
     if (bytes == 0 || (bytes == -1 && errno == ECONNRESET)) {
         if (close_conn(conn, *num_clients) == -1) {
             perror("close_conn");
@@ -117,7 +109,24 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
         }
 
         perror("read");
+        if (close_conn(conn, *num_clients) == -1) {
+            perror("close_conn");
+            return -1;
+        }
+        if (remove_active_fd(conn->fd, active_fds, num_clients) == -1) {
+            perror("remove_active_fd");
+            return -1;
+        };
+
         return -1;
+    }
+    if (sizeof(conn->read.buf) <= conn->read.len) {
+        // Reset the whole read buffer if we don't find a request
+        printf("Buffer full, dropping data\n");
+        if (conn->state == CONN_PARSING) {
+            conn->state = CONN_READING;
+        }
+        conn->read.len = 0;
     }
     return 0;
 }
@@ -152,8 +161,17 @@ int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clie
                 }
                 return 0;
             }
-
+            
             perror("write");
+            if (close_conn(conn, *num_clients) == -1) {
+                perror("close_conn");
+                return -1;
+            }
+            if (remove_active_fd(conn->fd, active_fds, num_clients) == -1) {
+                perror("remove_active_fd");
+                return -1;
+            };
+
             return -1;
         }
     }
