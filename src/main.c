@@ -15,7 +15,7 @@ int main() {
     struct sigaction sa = {
         .sa_handler = sig_handler,
     };
-    if (sigaction(SIGTERM, &sa, NULL) == -1) {
+    if (sigaction(SIGTERM, &sa, NULL) == -1 || sigaction(SIGINT, &sa, NULL) == -1) {
         perror("sigaction");
         return 1;
     }
