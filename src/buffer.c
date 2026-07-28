@@ -15,7 +15,7 @@ int close_file(struct write *write) {
 
         return 0;
     }
-    return -1;
+    return 0;
 }
 
 int read_until(struct slice *buf, const struct slice *delim, struct slice *out) {
