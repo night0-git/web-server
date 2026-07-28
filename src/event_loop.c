@@ -101,7 +101,7 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
         if (remove_active_fd(conn->fd, active_fds, num_clients) == -1) {
             perror("remove_active_fd");
             return -1;
-        };
+        }
         return 0;
     } else if (bytes == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -116,7 +116,7 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
         if (remove_active_fd(conn->fd, active_fds, num_clients) == -1) {
             perror("remove_active_fd");
             return -1;
-        };
+        }
 
         return -1;
     }
@@ -301,6 +301,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
     if (sigint_received) {
         for (int i = 0; i < num_clients; i++) {
             int fd = active_fds[i];
+            close_file(&clients[fd].write);
             if (close(fd) == -1) {
                 perror("close");
             }
