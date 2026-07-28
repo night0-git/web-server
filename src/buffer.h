@@ -17,10 +17,12 @@ struct write {
     size_t len;
     size_t offset;
 
-    FILE *file;
+    int file_fd;
+    off_t file_offset;
+    off_t file_size;
 };
 
-void close_file(struct write *write);
+int close_file(struct write *write);
 
 // A movable slice of a string of bytes
 struct slice {

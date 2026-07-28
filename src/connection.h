@@ -7,7 +7,8 @@
 enum conn_state {
   CONN_READING,
   CONN_PARSING,
-  CONN_WRITING,
+  CONN_WRITING_HEADERS,
+  CONN_WRITING_FILE,
   CONN_CLOSING,
 };
 
@@ -26,8 +27,9 @@ int add_active_fd(int fd, int *pool, int *curr_len, int max_fds);
 int remove_active_fd(int fd, int *pool, int *curr_len);
 
 extern const char *CONN_READING_STR;
-extern const char *CONN_WRITING_STR;
 extern const char *CONN_PARSING_STR;
+extern const char *CONN_WRITING_HEADERS_STR;
+extern const char *CONN_WRITING_FILE_STR;
 extern const char *CONN_CLOSING_STR;
 
 const char *state_str(struct connection *conn);

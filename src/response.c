@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <stdint.h>
 
 struct mime_map mime_registry[] = {
     {".html", "text/html"},
@@ -30,12 +32,10 @@ const char *get_mime_type_by_extension(const char *filename) {
     return default_type;
 }
 
-void prepare_response(struct request *req, struct write *write) {
+void prepare_headers(struct request *req, struct write *write) {
     int is_root_req = strcmp(req->path, "/") == 0;
 
     const char *status = CODE_OK;
-    FILE *f = NULL;
-    size_t content_len = 0;
     char path[256];
 
     if (is_root_req) {
@@ -47,12 +47,11 @@ void prepare_response(struct request *req, struct write *write) {
     const char *content_type = get_mime_type_by_extension(path);
 
     if (strcmp(req->method, "GET") == 0) {
-        write->file = fopen(path, "rb");
-        f = write->file;
-        if (f) {
+        write->file_fd = open(path, O_RDONLY);
+        if (write->file_fd != -1) {
             struct stat st;
-            fstat(fileno(f), &st);
-            content_len = st.st_size;
+            fstat(write->file_fd, &st);
+            write->file_size = st.st_size;
         } else {
             status = CODE_NOT_FOUND;
         }
@@ -63,22 +62,9 @@ void prepare_response(struct request *req, struct write *write) {
     int written = snprintf(write->buf, sizeof(write->buf),
         "HTTP/1.1 %s\r\n"
         "Content-Type: %s\r\n"
-        "Content-Length: %zu\r\n"
+        "Content-Length: %jd\r\n"
         "\r\n",
-        status, content_type, content_len);
-
-    // Append file content to response
-    if (f) {
-        size_t bytes_read = fread(write->buf + written, 1, sizeof(write->buf) - written, f);
-        if (bytes_read > 0) {
-            written += (int)bytes_read;
-        } else if (feof(f)) {
-            close_file(write);
-        } else {
-            perror("fread");
-            close_file(write);
-        }
-    }
+        status, content_type, (intmax_t)write->file_size);
 
     write->len = written;
 }

@@ -1,12 +1,21 @@
 #include "buffer.h"
 #include <stddef.h>
 #include <string.h>
+#include <unistd.h>
 
-void close_file(struct write *write) {
-    if (write->file) {
-        fclose(write->file);
-        write->file = NULL;
+int close_file(struct write *write) {
+    if (write->file_fd != -1) {
+        if (close(write->file_fd) == -1) {
+            perror("close");
+            return -1;
+        }
+        write->file_fd = -1;
+        write->file_offset = 0;
+        write->file_size = 0;
+
+        return 0;
     }
+    return -1;
 }
 
 int read_until(struct slice *buf, const struct slice *delim, struct slice *out) {

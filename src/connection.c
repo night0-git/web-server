@@ -2,8 +2,9 @@
 #include <string.h>
 
 const char *CONN_READING_STR = "CONN_READING";
-const char *CONN_WRITING_STR = "CONN_WRITING";
 const char *CONN_PARSING_STR = "CONN_PARSING";
+const char *CONN_WRITING_HEADERS_STR = "CONN_WRITING_HEADERS";
+const char *CONN_WRITING_FILE_STR = "CONN_WRITING_FILE";
 const char *CONN_CLOSING_STR = "CONN_CLOSING";
 
 void client_init(int fd, struct sockaddr_in addr, struct connection *conn) {
@@ -12,7 +13,8 @@ void client_init(int fd, struct sockaddr_in addr, struct connection *conn) {
     conn->read.len = 0;
     conn->write.len = 0;
     conn->write.offset = 0;
-    conn->write.file = NULL;
+    conn->write.file_fd = -1;
+    conn->write.file_offset = 0;
     conn->state = CONN_READING;
 }
 
@@ -46,8 +48,10 @@ const char *state_str(struct connection *conn) {
     switch (conn->state) {
     case CONN_READING:
         return CONN_READING_STR;
-    case CONN_WRITING:
-        return CONN_WRITING_STR;
+    case CONN_WRITING_HEADERS:
+        return CONN_WRITING_HEADERS_STR;
+    case CONN_WRITING_FILE:
+        return CONN_WRITING_FILE_STR;
     case CONN_PARSING:
         return CONN_PARSING_STR;
     case CONN_CLOSING:

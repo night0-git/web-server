@@ -8,11 +8,14 @@
 #include <stdio.h>
 #include <sys/epoll.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/sendfile.h>
 
 volatile sig_atomic_t sigterm_received = 0;
 volatile sig_atomic_t sigint_received = 0;
@@ -35,7 +38,22 @@ int close_conn(struct connection *conn) {
         perror("close");
         return -1;
     }
-    close_file(&conn->write);
+    if (close_file(&conn->write) == -1) {
+        perror("close_file");
+        return -1;
+    }
+    return 0;
+}
+
+int set_conn_events_flag(int epfd, struct connection *conn, uint32_t events) {
+    struct epoll_event ev = {
+        .data.ptr = conn,
+        .events = events,
+    };
+    if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
+        perror("epoll_ctl");
+        return -1;
+    }
     return 0;
 }
 
@@ -51,7 +69,7 @@ int close_conn_and_remove_fd(struct connection *conn, int *active_fds, int *num_
     return 0;
 }
 
-// Handle one read connection, a return value of -1 will terminate the server
+// Handle one read event, a return value of -1 will terminate the server
 int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clients) {
     ssize_t bytes;
     while (sizeof(conn->read.buf) - conn->read.len > 0) {
@@ -81,17 +99,11 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
                        inet_ntoa(conn->addr.sin_addr),
                        ntohs(conn->addr.sin_port),
                        req.method, req.path, req.version, req.content_len);
-                prepare_response(&req, &conn->write);
+                prepare_headers(&req, &conn->write);
 
-                conn->state = CONN_WRITING;
-
-                // Switch to writing mode
-                struct epoll_event ev = {
-                    .data.ptr = conn,
-                    .events = EPOLLOUT,
-                };
-                if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
-                    perror("epoll_ctl");
+                conn->state = CONN_WRITING_HEADERS;
+                if (set_conn_events_flag(epfd, conn, EPOLLOUT) == -1) {
+                    perror("set_conn_events_flag");
                     return -1;
                 }
 
@@ -153,13 +165,18 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
     return 0;
 }
 
-// Handle one write connection, a return value of -1 will terminate the server
-int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clients) {
-    // Print only the headers
-    if (memcmp(conn->write.buf + conn->write.offset, "HTTP/1.1", sizeof("HTTP/1.1") - 1) == 0) {
-        const char *body = memmem(conn->write.buf, conn->write.len, "\r\n\r\n", 4);
-        if (body) {
-            printf("Response generated:\n%.*s\n", (int)(body - conn->write.buf), conn->write.buf);
+// Handle one write event (headers), a return value of -1 will terminate the server
+int conn_write_headers(struct connection *conn, int epfd, int *active_fds, int *num_clients) {
+    if (conn->write.offset == 0) {
+        const char *delim = memmem(conn->write.buf, conn->write.len, "\r\n\r\n", 4);
+        if (delim) {
+            printf("Response generated:\n%.*s\n", (int)(delim - conn->write.buf), conn->write.buf);
+        }
+
+        // Enable TCP_CORK to coalesce header write calls
+        if (setsockopt(conn->fd, IPPROTO_TCP, TCP_CORK, &(int){1}, sizeof(int)) == -1) {
+            perror("setsockopt");
+            return -1;
         }
     }
 
@@ -175,6 +192,7 @@ int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clie
             } else {
                 if (errno == ECONNRESET || errno == EPIPE) {
                     if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
+                        perror("close_conn_and_remove_fd");
                         return -1;
                     }
                     printf("Client disconnected: %s:%d (%d)\n",
@@ -183,6 +201,7 @@ int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clie
                 } else {
                     perror("write");
                     if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
+                        perror("close_conn_and_remove_fd");
                         return -1;
                     }
                     printf("Client closed due to write error: %s:%d (%d)\n",
@@ -195,38 +214,64 @@ int conn_write(struct connection *conn, int epfd, int *active_fds, int *num_clie
     }
 
     if (conn->write.offset == conn->write.len) {
-        // Fetch more data from file if there is a file opened
-        if (conn->write.file && !feof(conn->write.file)) {
-            size_t bytes_read = fread(conn->write.buf, 1, sizeof(conn->write.buf), conn->write.file);
-            if (bytes_read > 0) {
-                conn->write.offset = 0;
-                conn->write.len = bytes_read;
-            } else if (feof(conn->write.file)) {
-                close_file(&conn->write);
-            } else {
-                perror("fread");
-                close_file(&conn->write);
-                return -1;
-            }
+        conn->write.offset = 0;
+        conn->write.len = 0;
+
+        if (conn->write.file_fd != -1) {
+            conn->state = CONN_WRITING_FILE;
         } else {
-            close_file(&conn->write);
-            conn->write.offset = 0;
-            conn->write.len = 0;
-
             conn->state = CONN_READING;
-
-            // Switch to reading mode
-            struct epoll_event ev = {
-                .data.ptr = conn,
-                .events = EPOLLIN,
-            };
-            if (epoll_ctl(epfd, EPOLL_CTL_MOD, conn->fd, &ev) == -1) {
-                perror("epoll_ctl");
+            if (set_conn_events_flag(epfd, conn, EPOLLIN) == -1) {
+                perror("set_conn_events_flag");
                 return -1;
             }
         }
     }
 
+    return 0;
+}
+
+// Handle one write event (file), a return value of -1 will terminate the server
+int conn_write_file(struct connection *conn, int epfd, int *active_fds, int *num_clients) {
+    if (conn->write.file_fd != -1) {
+        while (conn->write.file_offset < conn->write.file_size) {
+            ssize_t bytes_sent = sendfile(conn->fd, conn->write.file_fd,
+                                          &conn->write.file_offset,
+                                          conn->write.file_size - conn->write.file_offset);
+            if (bytes_sent == -1) {
+                if (errno == EAGAIN) {
+                    return 0;
+                }
+
+                perror("sendfile");
+                if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
+                    perror("close_conn_and_remove_fd");
+                    return -1;
+                }
+                printf("Client closed due to write error: %s:%d (%d)\n",
+                       inet_ntoa(conn->addr.sin_addr),
+                       ntohs(conn->addr.sin_port), *num_clients);
+
+                return 0;
+            }
+        }
+
+        if (conn->write.file_offset == conn->write.file_size) {
+            // Disable TCP_CORK after file write
+            if (setsockopt(conn->fd, IPPROTO_TCP, TCP_CORK, &(int){0}, sizeof(int)) == -1) {
+                perror("setsockopt");
+                return -1;
+            }
+
+            close_file(&conn->write);
+
+            conn->state = CONN_READING;
+            if (set_conn_events_flag(epfd, conn, EPOLLIN) == -1) {
+                perror("set_conn_events_flag");
+                return -1;
+            }
+        }
+    }
     return 0;
 }
 
@@ -314,9 +359,14 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                         perror("conn_read");
                         return -1;
                     }
-                } else if (conn->state == CONN_WRITING) {
-                    if (conn_write(conn, epfd, active_fds, &num_clients) == -1) {
-                        perror("conn_write");
+                } else if (conn->state == CONN_WRITING_HEADERS) {
+                    if (conn_write_headers(conn, epfd, active_fds, &num_clients) == -1) {
+                        perror("conn_write_headers");
+                        return -1;
+                    }
+                } else if (conn->state == CONN_WRITING_FILE) {
+                    if (conn_write_file(conn, epfd, active_fds, &num_clients) == -1) {
+                        perror("conn_write_file");
                         return -1;
                     }
                 }

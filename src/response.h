@@ -21,6 +21,6 @@ extern struct mime_map mime_registry[];
 
 const char *get_mime_type_by_extension(const char *filename);
 
-void prepare_response(struct request *req, struct write *write);
+void prepare_headers(struct request *req, struct write *write);
 
 #endif
