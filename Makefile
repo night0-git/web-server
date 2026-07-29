@@ -1,4 +1,4 @@
-CC := clang
+CC ?= clang
 CFLAGS := -Wall -Wextra
 
 TARGET := bin/web-server
