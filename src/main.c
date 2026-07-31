@@ -2,7 +2,7 @@
 #include "server.h"
 #include "event_loop.h"
 #include "config.h"
-#include <stdio.h>
+#include "log.h"
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -41,6 +41,8 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    LOG_INFO("listening on port %d, root: %s", sv_conf.port, sv_conf.root_dir);
+
     // Create the epoll instance
     int epfd = epoll_create1(0);
     if (epfd == -1) {
@@ -69,7 +71,7 @@ int main(int argc, char *argv[]) {
             return 1;
         }
     }
-    printf("Server exiting...");
+    LOG_INFO("server exiting");
 
     return 0;
 }

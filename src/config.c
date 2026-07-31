@@ -18,7 +18,7 @@ static void print_usage(const char *prog) {
     printf("Usage: %s [OPTIONS]\n", prog);
     printf("  -p, --port PORT       Port to open\n");
     printf("  -d, --dir DIRECTORY   Root directory\n");
-    printf("  -v, --verbose         Verbose logging\n");
+    printf("  -v, --verbose         Verbose logging (-vv for trace)\n");
     printf("  -h, --help            Show this help\n");
 }
 
@@ -45,7 +45,7 @@ void parse_args(int argc, char *argv[], struct server_config *config) {
             config->root_dir = optarg;
             break;
         case 'v':
-            config->verbose = 1;
+            config->verbose += 1;
             break;
         case 'h':
             print_usage(argv[0]);

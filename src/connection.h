@@ -5,21 +5,21 @@
 #include <netinet/in.h>
 
 enum conn_state {
-  CONN_READING,
-  CONN_PARSING,
-  CONN_WRITING_HEADERS,
-  CONN_WRITING_FILE,
-  CONN_CLOSING,
+    CONN_READING,
+    CONN_PARSING,
+    CONN_WRITING_HEADERS,
+    CONN_WRITING_FILE,
+    CONN_CLOSING,
 };
 
 struct connection {
-  int fd;
-  struct sockaddr_in addr;
+    int fd;
+    struct sockaddr_in addr;
 
-  struct read read;
-  struct write write;
+    struct read read;
+    struct write write;
 
-  enum conn_state state;
+    enum conn_state state;
 };
 
 void client_init(int fd, struct sockaddr_in addr, struct connection *conn);

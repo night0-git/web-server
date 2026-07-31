@@ -3,9 +3,9 @@
 #include "server.h"
 #include "parser.h"
 #include "response.h"
+#include "log.h"
 #include <endian.h>
 #include <linux/limits.h>
-#include <stdio.h>
 #include <sys/epoll.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -95,10 +95,10 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
 
             struct request req;
             if (parse_request(data, data_len, &req) != -1) {
-                printf("Request from %s:%d:\n%s %s %s, Content-Length: %zu\n",
-                       inet_ntoa(conn->addr.sin_addr),
-                       ntohs(conn->addr.sin_port),
-                       req.method, req.path, req.version, req.content_len);
+                LOG_DBG("%s %s %s from %s:%d, Content-Length: %zu",
+                        req.method, req.path, req.version,
+                        inet_ntoa(conn->addr.sin_addr),
+                        ntohs(conn->addr.sin_port), req.content_len);
                 prepare_headers(&req, &conn->write);
 
                 conn->state = CONN_WRITING_HEADERS;
@@ -109,10 +109,9 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
 
                 break;
             } else {
-                printf("Failed to parse request from %s:%d: %.*s\n",
-                       inet_ntoa(conn->addr.sin_addr),
-                       ntohs(conn->addr.sin_port),
-                       (int)(data_len - needle_size), data);
+                LOG_WARN("failed to parse request from %s:%d",
+                         inet_ntoa(conn->addr.sin_addr),
+                         ntohs(conn->addr.sin_port));
                 conn->state = CONN_READING;
                 conn->read.len = 0;
             }
@@ -124,9 +123,9 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
             perror("close_conn_and_remove_fd");
             return -1;
         }
-        printf("Client disconnected: %s:%d (%d)\n",
-               inet_ntoa(conn->addr.sin_addr),
-               ntohs(conn->addr.sin_port), *num_clients);
+        LOG_DBG("client disconnected: %s:%d (%d)",
+                inet_ntoa(conn->addr.sin_addr),
+                ntohs(conn->addr.sin_port), *num_clients);
         return 0;
     } else if (bytes == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -136,9 +135,9 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
                 perror("close_conn_and_remove_fd");
                 return -1;
             }
-            printf("Client disconnected: %s:%d (%d)\n",
-                   inet_ntoa(conn->addr.sin_addr),
-                   ntohs(conn->addr.sin_port), *num_clients);
+            LOG_DBG("client disconnected: %s:%d (%d)",
+                    inet_ntoa(conn->addr.sin_addr),
+                    ntohs(conn->addr.sin_port), *num_clients);
         } else {
             // Print the previous read error
             perror("read");
@@ -146,16 +145,16 @@ int conn_read(struct connection *conn, int epfd, int *active_fds, int *num_clien
                 perror("close_conn_and_remove_fd");
                 return -1;
             }
-            printf("Client closed due to read error: %s:%d (%d)\n",
-                   inet_ntoa(conn->addr.sin_addr),
-                   ntohs(conn->addr.sin_port), *num_clients);
+            LOG_WARN("client closed due to read error: %s:%d (%d)",
+                     inet_ntoa(conn->addr.sin_addr),
+                     ntohs(conn->addr.sin_port), *num_clients);
         }
         return 0;
     }
 
     if (sizeof(conn->read.buf) <= conn->read.len) {
         // Reset the whole read buffer if we don't find a request
-        printf("Buffer full, dropping data\n");
+        LOG_WARN("buffer full, dropping data");
         if (conn->state == CONN_PARSING) {
             conn->state = CONN_READING;
         }
@@ -170,7 +169,7 @@ int conn_write_headers(struct connection *conn, int epfd, int *active_fds, int *
     if (conn->write.offset == 0) {
         const char *delim = memmem(conn->write.buf, conn->write.len, "\r\n\r\n", 4);
         if (delim) {
-            printf("Response generated:\n%.*s\n", (int)(delim - conn->write.buf), conn->write.buf);
+            log_trace_headers(conn->write.buf, delim - conn->write.buf);
         }
 
         // Enable TCP_CORK to coalesce header write calls
@@ -195,18 +194,18 @@ int conn_write_headers(struct connection *conn, int epfd, int *active_fds, int *
                         perror("close_conn_and_remove_fd");
                         return -1;
                     }
-                    printf("Client disconnected: %s:%d (%d)\n",
-                           inet_ntoa(conn->addr.sin_addr),
-                           ntohs(conn->addr.sin_port), *num_clients);
+                    LOG_DBG("client disconnected: %s:%d (%d)",
+                            inet_ntoa(conn->addr.sin_addr),
+                            ntohs(conn->addr.sin_port), *num_clients);
                 } else {
                     perror("write");
                     if (close_conn_and_remove_fd(conn, active_fds, num_clients) == -1) {
                         perror("close_conn_and_remove_fd");
                         return -1;
                     }
-                    printf("Client closed due to write error: %s:%d (%d)\n",
-                           inet_ntoa(conn->addr.sin_addr),
-                           ntohs(conn->addr.sin_port), *num_clients);
+                    LOG_WARN("client closed due to write error: %s:%d (%d)",
+                             inet_ntoa(conn->addr.sin_addr),
+                             ntohs(conn->addr.sin_port), *num_clients);
                 }
                 return 0;
             }
@@ -248,9 +247,9 @@ int conn_write_file(struct connection *conn, int epfd, int *active_fds, int *num
                     perror("close_conn_and_remove_fd");
                     return -1;
                 }
-                printf("Client closed due to write error: %s:%d (%d)\n",
-                       inet_ntoa(conn->addr.sin_addr),
-                       ntohs(conn->addr.sin_port), *num_clients);
+                LOG_WARN("client closed due to write error: %s:%d (%d)",
+                         inet_ntoa(conn->addr.sin_addr),
+                         ntohs(conn->addr.sin_port), *num_clients);
 
                 return 0;
             }
@@ -348,9 +347,9 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                     continue;
                 }
 
-                printf("Client connected: %s:%d (%d)\n",
-                       inet_ntoa(client_addr.sin_addr),
-                       ntohs(client_addr.sin_port), num_clients);
+                LOG_DBG("client connected: %s:%d (%d)",
+                        inet_ntoa(client_addr.sin_addr),
+                        ntohs(client_addr.sin_port), num_clients);
             } else {
                 // Handle client
                 struct connection *conn = (struct connection *)events[i].data.ptr;
@@ -380,9 +379,9 @@ int start_event_loop(int epfd, struct connection *server_conn) {
             if (close_conn(&clients[fd]) == -1) {
                 perror("close_conn");
             }
-            printf("Client closed: %s:%d (%d)\n",
-                   inet_ntoa(clients[fd].addr.sin_addr),
-                   ntohs(clients[fd].addr.sin_port), num_clients - i - 1);
+            LOG_DBG("client closed: %s:%d (%d)",
+                    inet_ntoa(clients[fd].addr.sin_addr),
+                    ntohs(clients[fd].addr.sin_port), num_clients - i - 1);
         }
     }
 
