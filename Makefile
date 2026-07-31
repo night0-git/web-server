@@ -1,5 +1,5 @@
 CC := clang
-CFLAGS := -Wall -Wextra -MMD -MP
+CFLAGS := -std=gnu17 -Wall -Wextra -MMD -MP
 
 TARGET := bin/web-server
 BUILD_DIR := build
