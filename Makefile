@@ -1,12 +1,13 @@
 CC ?= clang
-CFLAGS := -Wall -Wextra
+CFLAGS := -Wall -Wextra -MMD -MP
 
 TARGET := bin/web-server
 BUILD_DIR := build
 SRC_DIR := src
 
-SRCS := $(shell find $(SRC_DIR) -name '*.c')
+SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+DEPS := $(OBJS:.o=.d)
 
 .PHONY: clean run debug all
 
@@ -29,4 +30,6 @@ run: $(TARGET)
 	./$(TARGET)
 
 clean:
-	rm -rf $(BUILD_DIR) bin
+	rm -rf $(BUILD_DIR) $(dir $(TARGET))
+
+-include $(DEPS)
