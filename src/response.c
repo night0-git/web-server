@@ -1,4 +1,5 @@
 #include "response.h"
+#include "config.h"
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -39,9 +40,9 @@ void prepare_headers(struct request *req, struct write *write) {
     char path[256];
 
     if (is_root_req) {
-        snprintf(path, sizeof(path), "%s%s", SERVE_FILE_ROOT, "/index.html");
+        snprintf(path, sizeof(path), "%s%s", sv_conf.root_dir, "/index.html");
     } else {
-        snprintf(path, sizeof(path), "%s%s", SERVE_FILE_ROOT, req->path);
+        snprintf(path, sizeof(path), "%s%s", sv_conf.root_dir, req->path);
     }
 
     const char *content_type = get_mime_type_by_extension(path);

@@ -1,6 +1,7 @@
 #include "connection.h"
 #include "server.h"
 #include "event_loop.h"
+#include "config.h"
 #include <stdio.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -11,7 +12,10 @@
 #include <signal.h>
 #include <errno.h>
 
-int main() {
+int main(int argc, char *argv[]) {
+    server_conf_init(&sv_conf);
+    parse_args(argc, argv, &sv_conf);
+
     struct sigaction sa = {
         .sa_handler = sig_handler,
     };
@@ -28,7 +32,7 @@ int main() {
 
     struct sockaddr_in server_addr = {
         .sin_family = AF_INET,
-        .sin_port = htons(8080),
+        .sin_port = htons(sv_conf.port),
         .sin_addr = { INADDR_ANY },
     };
     int listen_sock = start_server(&server_addr);

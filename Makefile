@@ -1,4 +1,4 @@
-CC ?= clang
+CC := clang
 CFLAGS := -Wall -Wextra -MMD -MP
 
 TARGET := bin/web-server
@@ -9,7 +9,7 @@ SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: clean run debug all
+.PHONY: clean debug all
 
 all: release
 
@@ -25,9 +25,6 @@ $(TARGET): $(OBJS)
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
-
-run: $(TARGET)
-	./$(TARGET)
 
 clean:
 	rm -rf $(BUILD_DIR) $(dir $(TARGET))
