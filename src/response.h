@@ -1,10 +1,10 @@
 #ifndef RESPONSE_H
 #define RESPONSE_H
 
-#include "connection.h"
-#include "parser.h"
 #include <stddef.h>
-#include <string.h>
+
+struct request;
+struct write;
 
 #define CODE_OK "200 OK"
 #define CODE_NOT_FOUND "404 Not Found"

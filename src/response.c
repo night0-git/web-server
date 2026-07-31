@@ -1,5 +1,7 @@
 #include "response.h"
 #include "config.h"
+#include "buffer.h"
+#include "parser.h"
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
