@@ -3,6 +3,7 @@
 #include "event_loop.h"
 #include "config.h"
 #include "log.h"
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -21,13 +22,13 @@ int main(int argc, char *argv[]) {
     };
     if (sigaction(SIGTERM, &sa, NULL) == -1 || sigaction(SIGINT, &sa, NULL) == -1) {
         perror("sigaction");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     sa.sa_handler = SIG_IGN;
     if (sigaction(SIGPIPE, &sa, NULL) == -1) {
         perror("sigaction");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     struct sockaddr_in server_addr = {
@@ -38,7 +39,7 @@ int main(int argc, char *argv[]) {
     int listen_sock = start_server(&server_addr);
     if (listen_sock == -1) {
         perror("start_server");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     LOG_INFO("listening on port %d, root: %s", sv_conf.port, sv_conf.root_dir);
@@ -47,7 +48,7 @@ int main(int argc, char *argv[]) {
     int epfd = epoll_create1(0);
     if (epfd == -1) {
         perror("epoll_create1");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     // Add the listen socket
@@ -57,21 +58,21 @@ int main(int argc, char *argv[]) {
     };
     if (add_conn(epfd, EPOLLIN, &server_conn, listen_sock) == -1) {
         perror("add_conn");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     if (start_event_loop(epfd, &server_conn) == -1) {
         perror("start_event_loop");
-        return 1;
+        return EXIT_FAILURE;
     }
 
     if (close(epfd) == -1 || close(listen_sock) == -1) {
         if (errno != EBADF) {
             perror("close");
-            return 1;
+            return EXIT_FAILURE;
         }
     }
     LOG_INFO("server exiting");
 
-    return 0;
+    return EXIT_SUCCESS;
 }
