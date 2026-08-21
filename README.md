@@ -12,10 +12,12 @@ make clean && make release
 ```
 **Options**:
 
--p, --port PORT         Port to open (default to 8080) \
--d, --dir DIRECTORY     Root directory \
--v, --verbose           Verbose logging (-vv for trace) \
--h, --help              Show this help
+```
+-p, --port PORT       Port to open (default to 8080)
+-d, --dir DIRECTORY   Root directory
+-v, --verbose         Verbose logging (-vv for trace)
+-h, --help            Show this help
+```
 
 **Example**:
 ```
