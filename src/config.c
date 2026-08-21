@@ -16,7 +16,7 @@ void server_conf_init(struct server_config *config) {
 
 static void print_usage(const char *prog) {
     printf("Usage: %s [OPTIONS]\n", prog);
-    printf("  -p, --port PORT       Port to open\n");
+    printf("  -p, --port PORT       Port to open (default to 8080)\n");
     printf("  -d, --dir DIRECTORY   Root directory\n");
     printf("  -v, --verbose         Verbose logging (-vv for trace)\n");
     printf("  -h, --help            Show this help\n");
