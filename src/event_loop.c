@@ -305,56 +305,58 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                     continue;
                 }
 
-                if (num_clients >= MAX_FDS) {
-                    continue;
-                }
-
-                client_addr_len = sizeof(client_addr);
-                int conn = accept(server_conn->fd, (struct sockaddr *)&client_addr, &client_addr_len);
-
-                if (conn == -1) {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                        continue;
-                    }
-                    if (errno == EMFILE) {
-                        LOG_WARN("file descriptor limit reached for this process");
-                        continue;
+                while (1) {
+                    if (num_clients >= MAX_FDS) {
+                        break;
                     }
 
-                    perror("accept");
-                    return -1;
-                }
-                if (set_flag(conn, O_NONBLOCK) == -1) {
-                    perror("fcntl");
-                    return -1;
-                }
+                    client_addr_len = sizeof(client_addr);
+                    int conn = accept(server_conn->fd, (struct sockaddr *)&client_addr, &client_addr_len);
 
-                // Populate connection struct
-                client_init(conn, client_addr, &clients[conn]);
+                    if (conn == -1) {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                            break;
+                        }
+                        if (errno == EMFILE) {
+                            LOG_WARN("file descriptor limit reached for this process");
+                            break;
+                        }
 
-                // Add client socket to epoll instance
-                if (add_conn(epfd, EPOLLIN, &clients[conn], conn) == -1) {
-                    perror("add_conn");
-                    return -1;
-                }
-
-                if (add_active_fd(conn, active_fds, &num_clients, MAX_FDS) == -1) {
-                    // Theoretically this should not happen because we exit earlier
-                    if (epoll_ctl(epfd, EPOLL_CTL_DEL, conn, NULL) == -1) {
-                        perror("epoll_ctl");
+                        perror("accept");
                         return -1;
                     }
-                    if (close(conn) == -1) {
-                        perror("close");
+                    if (set_flag(conn, O_NONBLOCK) == -1) {
+                        perror("fcntl");
                         return -1;
                     }
 
-                    continue;
-                }
+                    // Populate connection struct
+                    client_init(conn, client_addr, &clients[conn]);
 
-                LOG_DBG("client connected: %s:%d (%d)",
-                        inet_ntoa(client_addr.sin_addr),
-                        ntohs(client_addr.sin_port), num_clients);
+                    // Add client socket to epoll instance
+                    if (add_conn(epfd, EPOLLIN, &clients[conn], conn) == -1) {
+                        perror("add_conn");
+                        return -1;
+                    }
+
+                    if (add_active_fd(conn, active_fds, &num_clients, MAX_FDS) == -1) {
+                        // Theoretically this should not happen because we exit earlier
+                        if (epoll_ctl(epfd, EPOLL_CTL_DEL, conn, NULL) == -1) {
+                            perror("epoll_ctl");
+                            return -1;
+                        }
+                        if (close(conn) == -1) {
+                            perror("close");
+                            return -1;
+                        }
+
+                        continue;
+                    }
+
+                    LOG_DBG("client connected: %s:%d (%d)",
+                            inet_ntoa(client_addr.sin_addr),
+                            ntohs(client_addr.sin_port), num_clients);
+                }
             } else {
                 // Handle client
                 struct connection *conn = (struct connection *)events[i].data.ptr;

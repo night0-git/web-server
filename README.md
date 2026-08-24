@@ -29,6 +29,7 @@ Because this project primarily serves educational purposes, its architecture is 
 - Everything runs on one event loop thread.
 - Logging causes significant bottlenecks in verbose mode.
 - Each connection follows a relatively heavy, fixed syscall path.
+- The current implementation uses level-triggered epoll, while a more performant approach is edge-triggered epoll.
 - File descriptors are stored in a simple array because C does not have a built-in hash map structure.
 - `prepare_headers()` is a very heavy operation. It does `open` + `stat`, and a lot of `snprintf` to build the headers.
 
