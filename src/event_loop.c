@@ -305,7 +305,7 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                     continue;
                 }
 
-                if (num_clients == MAX_FDS) {
+                if (num_clients >= MAX_FDS) {
                     continue;
                 }
 
