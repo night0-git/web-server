@@ -316,6 +316,11 @@ int start_event_loop(int epfd, struct connection *server_conn) {
                     if (errno == EAGAIN || errno == EWOULDBLOCK) {
                         continue;
                     }
+                    if (errno == EMFILE) {
+                        LOG_WARN("file descriptor limit reached for this process");
+                        continue;
+                    }
+
                     perror("accept");
                     return -1;
                 }
