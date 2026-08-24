@@ -33,7 +33,7 @@ int start_server(struct sockaddr_in *addr) {
         return -1;
     }
 
-    if (listen(listen_sock, 10) == -1) {
+    if (listen(listen_sock, LISTEN_BACKLOG) == -1) {
         perror("listen");
         return -1;
     }
