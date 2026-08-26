@@ -44,29 +44,23 @@ int main(int argc, char *argv[]) {
 
     LOG_INFO("listening on port %d, root: %s", sv_conf.port, sv_conf.root_dir);
 
-    // Create the epoll instance
-    int epfd = epoll_create1(0);
-    if (epfd == -1) {
-        perror("epoll_create1");
-        return EXIT_FAILURE;
-    }
-
-    // Add the listen socket
     struct connection server_conn = {
         .fd = listen_sock,
         .addr = server_addr,
     };
-    if (add_conn(epfd, EPOLLIN, &server_conn, listen_sock) == -1) {
-        perror("add_conn");
+
+    struct epoll_instance epoll_inst;
+    if (init_epoll_instance(&epoll_inst, &server_conn) == -1) {
+        perror("init_epoll_instance");
         return EXIT_FAILURE;
     }
 
-    if (start_event_loop(epfd, &server_conn) == -1) {
+    if (start_event_loop(&epoll_inst) == -1) {
         perror("start_event_loop");
         return EXIT_FAILURE;
     }
 
-    if (close(epfd) == -1 || close(listen_sock) == -1) {
+    if (close(epoll_inst.epfd) == -1 || close(listen_sock) == -1) {
         if (errno != EBADF) {
             perror("close");
             return EXIT_FAILURE;

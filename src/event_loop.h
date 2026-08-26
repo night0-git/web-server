@@ -13,8 +13,16 @@ extern volatile sig_atomic_t sigint_received;
 
 int add_conn(int epfd, uint32_t events, void *data, int fd);
 
-int start_event_loop(int epfd, struct connection *server_conn);
-
 void sig_handler(int signum);
+
+struct epoll_instance {
+    int epfd;
+    struct connection *server_conn;
+};
+
+int start_event_loop(const struct epoll_instance *epoll_inst);
+
+int init_epoll_instance(struct epoll_instance *epoll_inst,
+                        struct connection *server_conn);
 
 #endif
