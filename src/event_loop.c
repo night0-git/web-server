@@ -161,15 +161,13 @@ int conn_read(
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return 0;   // wait for next EPOLLIN
         } else if (errno == ECONNRESET) {
-            if (close_conn_and_remove_fd(
-                conn, cl_info, epoll_inst
-            ) == -1) {
+            if (close_conn_and_remove_fd( conn, cl_info, epoll_inst) == -1) {
                 perror("close_conn_and_remove_fd");
                 return -1;
             }
-            LOG_DBG("client disconnected: %s:%d (%d)",
-                    inet_ntoa(conn->addr.sin_addr),
-                    ntohs(conn->addr.sin_port), cl_info->num_clients);
+            LOG_WARN("connection reset by peer: %s:%d (%d)",
+                     inet_ntoa(conn->addr.sin_addr),
+                     ntohs(conn->addr.sin_port), cl_info->num_clients);
         } else {
             // Print the previous read error
             perror("read");
@@ -205,11 +203,6 @@ int conn_write_headers(
     struct clients_info *cl_info
 ) {
     if (conn->write.offset == 0) {
-        const char *delim = memmem(conn->write.buf, conn->write.len, "\r\n\r\n", 4);
-        if (delim) {
-            log_trace_headers(conn->write.buf, delim - conn->write.buf);
-        }
-
         // Enable TCP_CORK to coalesce header write calls
         if (setsockopt(conn->fd, IPPROTO_TCP, TCP_CORK, &(int){1}, sizeof(int)) == -1) {
             perror("setsockopt");
@@ -234,9 +227,9 @@ int conn_write_headers(
                         perror("close_conn_and_remove_fd");
                         return -1;
                     }
-                    LOG_DBG("client disconnected: %s:%d (%d)",
-                            inet_ntoa(conn->addr.sin_addr),
-                            ntohs(conn->addr.sin_port), cl_info->num_clients);
+                    LOG_WARN("client closed due to write error: %s:%d (%d)",
+                             inet_ntoa(conn->addr.sin_addr),
+                             ntohs(conn->addr.sin_port), cl_info->num_clients);
                 } else {
                     perror("write");
                     if (close_conn_and_remove_fd(
@@ -381,8 +374,8 @@ int start_event_loop(const struct epoll_instance *epoll_inst) {
                         if (errno == EAGAIN || errno == EWOULDBLOCK) {
                             break;
                         }
-                        if (errno == EMFILE) {
-                            LOG_WARN("file descriptor limit reached for this process");
+                        if (errno == EMFILE || errno == ENFILE) {
+                            LOG_WARN("connection refused: file descriptor limit reached (%s)", strerror(errno));
 
                             if (set_conn_events_flag(epfd, server_conn, 0) == -1) {
                                 perror("set_conn_events_flag");
@@ -423,10 +416,6 @@ int start_event_loop(const struct epoll_instance *epoll_inst) {
 
                         continue;
                     }
-
-                    LOG_DBG("client connected: %s:%d (%d)",
-                            inet_ntoa(client_addr.sin_addr),
-                            ntohs(client_addr.sin_port), cl_info.num_clients);
                 }
             } else {
                 // Handle client
@@ -457,9 +446,6 @@ int start_event_loop(const struct epoll_instance *epoll_inst) {
             if (close_conn(&clients[fd]) == -1) {
                 perror("close_conn");
             }
-            LOG_DBG("client closed: %s:%d (%d)",
-                    inet_ntoa(clients[fd].addr.sin_addr),
-                    ntohs(clients[fd].addr.sin_port), cl_info.num_clients - i - 1);
         }
     }
 

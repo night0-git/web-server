@@ -5,7 +5,7 @@ An educational web server written from scratch in C, with an epoll event loop.
 ## Build from source
 ```bash
 # Compile
-make clean && make release
+make clean && make
 
 # Run
 ./bin/web-server [OPTIONS]
@@ -15,12 +15,12 @@ make clean && make release
 ```
 -p, --port PORT       Port to open (default to 8080)
 -d, --dir DIRECTORY   Root directory
--v, --verbose         Verbose logging (-vv for trace)
+-v, --verbose         Verbose logging (log incoming requests)
 -h, --help            Show this help
 ```
 
 **Example**:
-```
+```bash
 ./bin/web-server -p 3000 -d /var/www -v
 ```
 
