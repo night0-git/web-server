@@ -9,14 +9,11 @@ SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: clean debug all
+all: $(TARGET)
+all: CFLAGS += -O3
 
-all: release
-
+debug: $(TARGET)
 debug: CFLAGS += -g -O0
-release: CFLAGS += -O3
-
-debug release: $(TARGET)
 
 $(TARGET): $(OBJS)
 	@mkdir -p $(dir $@)
@@ -30,3 +27,5 @@ clean:
 	rm -rf $(BUILD_DIR) $(dir $(TARGET))
 
 -include $(DEPS)
+
+.PHONY: clean debug all
